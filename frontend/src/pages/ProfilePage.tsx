@@ -29,7 +29,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     authApi.babies().then(setBabies).catch(() => setBabies([]));
-    // 检查 AI 配置权限（非 403 则有权限）
+    // 检查 AI 授权状态（非 403 则有权限，用于决定是否显示"已授权"标识）
     authApi.aiConfig().then(() => setAIAuthorized(true)).catch(() => setAIAuthorized(false));
   }, []);
 
@@ -175,8 +175,8 @@ export default function ProfilePage() {
         </button>
       </section>
 
-      {/* AI 配置入口 */}
-      {(user?.is_staff || aiAuthorized) && (
+      {/* AI 配置入口 - 仅管理员可见 */}
+      {user?.is_staff && (
         <button
           className="card flex w-full items-center gap-3 hover:shadow-md transition"
           onClick={() => navigate("/settings/ai")}
@@ -189,6 +189,19 @@ export default function ProfilePage() {
             <p className="text-xs text-gray-400">配置 API Key、授权管理</p>
           </div>
         </button>
+      )}
+
+      {/* 被授权用户提示 */}
+      {!user?.is_staff && aiAuthorized && (
+        <div className="card flex items-center gap-3 border border-green-100 bg-green-50/50">
+          <div className="rounded-xl bg-green-50 p-2.5">
+            <Bot className="h-5 w-5 text-green-500" />
+          </div>
+          <div>
+            <p className="font-medium text-gray-700">AI 助手已授权</p>
+            <p className="text-xs text-gray-400">管理员已授权您使用 AI 助手，可直接在 AI 助手页面使用</p>
+          </div>
+        </div>
       )}
 
       {/* 修改密码 */}

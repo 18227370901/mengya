@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Edit3 } from "lucide-react";
 import { timelineApi } from "@/api/catalog";
+import { useAuthStore } from "@/store/authStore";
 import type { TimelineItem } from "@/types";
 import ProductCard from "@/components/ProductCard";
 
 export default function TimelineDetailPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuthStore();
   const [item, setItem] = useState<TimelineItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -56,9 +59,19 @@ export default function TimelineDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <Link to="/timeline" className="flex items-center text-sm text-brand-500 hover:underline">
-        <ArrowLeft className="mr-1 h-4 w-4" /> 返回时间轴
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link to="/timeline" className="flex items-center text-sm text-brand-500 hover:underline">
+          <ArrowLeft className="mr-1 h-4 w-4" /> 返回时间轴
+        </Link>
+        {user?.is_staff && item && (
+          <button
+            className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-1.5 text-sm text-brand-600 hover:bg-brand-100"
+            onClick={() => navigate(`/timeline?edit=${item.id}`)}
+          >
+            <Edit3 className="h-4 w-4" /> 编辑此事件
+          </button>
+        )}
+      </div>
 
       <article className="card">
         <div className="mb-3 flex items-center gap-2">

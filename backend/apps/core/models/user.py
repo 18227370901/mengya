@@ -54,6 +54,10 @@ class User(AbstractUser):
     # 临时锁定时间（达到冻结阈值后锁定一段时间，到期自动解锁）
     locked_until = models.DateTimeField(null=True, blank=True, verbose_name="锁定截止时间")
 
+    # ===== 单终端登录控制 =====
+    # 存储当前有效的 access token JTI（JWT ID），新登录时更新此字段，旧 token 自动失效
+    active_token_jti = models.CharField(max_length=64, blank=True, default="", verbose_name="当前有效Token JTI")
+
     USERNAME_FIELD = "phone"
     REQUIRED_FIELDS = ["username"]
 

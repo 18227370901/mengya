@@ -212,6 +212,94 @@ export interface AIChatResult {
   query: string;
   response: string;
   used_openai: boolean;
+  used_config_name?: string;
+  used_search?: boolean;
   latency_ms: number;
   suggestions: string[];
+  session_id?: number;
+  session_title?: string;
+  error_hint?: string;
+}
+
+export interface ChatSessionSummary {
+  id: number;
+  title: string;
+  message_count: number;
+  last_message: string;
+  last_role: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionDetail {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: ChatMessageItem[];
+}
+
+export interface ChatMessageItem {
+  id: number;
+  role: "user" | "ai";
+  content: string;
+  used_config_name?: string;
+  used_search?: boolean;
+  error_hint?: string;
+  created_at: string;
+}
+
+export interface Recipe {
+  id: number;
+  title: string;
+  nutrient_tag: string;
+  period: string;
+  period_label: string;
+  period_month: string;
+  ingredients: string;
+  steps: string;
+  nutrition_tip: string;
+  cover_image?: string;
+  sort_order: number;
+  view_count: number;
+  created_at: string;
+}
+
+export interface FetalStory {
+  id: number;
+  title: string;
+  title_en?: string;
+  subtitle?: string;
+  subtitle_en?: string;
+  week_start: number;
+  day_offset: number;
+  day_index: number;
+  content: string;
+  content_en?: string;
+  tips?: string;
+  tips_en?: string;
+  cover_image?: string;
+  narrator: string;
+  source?: string;
+  source_en?: string;
+  sort_order: number;
+  view_count: number;
+  created_at: string;
+}
+
+export interface KidsEncyclopedia {
+  id: number;
+  chapter: string;
+  chapter_label: string;
+  question_number: number;
+  question: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  answer: string;
+  comic_dialogue: string;
+  cover_image?: string;
+  sort_order: number;
+  view_count: number;
+  created_at: string;
 }

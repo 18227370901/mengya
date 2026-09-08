@@ -15,3 +15,7 @@ dist/
 *.sqlite3
 *.db
 db.sqlite3
+
+# 运行时日志与构建缓存
+*.err
+*.tsbuildinfo

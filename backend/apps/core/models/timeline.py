@@ -20,6 +20,8 @@ class TimelineEvent(models.Model):
         ("milestone", "里程碑"),
         ("emotion", "心理情绪"),
         ("exercise", "运动"),
+        ("checkup", "产检"),
+        ("education", "胎教"),
     ]
 
     stage_type = models.CharField(max_length=30, choices=STAGE_TYPES, verbose_name="阶段类型")

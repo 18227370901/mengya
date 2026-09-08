@@ -22,6 +22,10 @@ import UserManagePage from "./pages/UserManagePage";
 import AuditLogPage from "./pages/AuditLogPage";
 import BrandListPage from "./pages/BrandListPage";
 import BrandDetailPage from "./pages/BrandDetailPage";
+import PregnancyWeeklyPage from "./pages/PregnancyWeeklyPage";
+import PregnancyRecipePage from "./pages/PregnancyRecipePage";
+import KidsEncyclopediaPage from "./pages/KidsEncyclopediaPage";
+import FetalStoryPage from "./pages/FetalStoryPage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 export default function App() {
@@ -38,6 +42,9 @@ export default function App() {
       >
         <Route path="/" element={<HomePage />} />
         <Route path="/timeline" element={<TimelinePage />} />
+        <Route path="/weekly" element={<PregnancyWeeklyPage />} />
+        <Route path="/recipes" element={<PregnancyRecipePage />} />
+        <Route path="/kids-encyclopedia" element={<KidsEncyclopediaPage />} />
         <Route path="/timeline/:id" element={<TimelineDetailPage />} />
         <Route path="/products" element={<ProductListPage />} />
         <Route path="/products/:id" element={<ProductDetailPage />} />
@@ -55,6 +62,7 @@ export default function App() {
         <Route path="/admin/audit-logs" element={<AuditLogPage />} />
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
+        <Route path="/fetal-stories" element={<FetalStoryPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

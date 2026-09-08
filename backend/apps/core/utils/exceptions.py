@@ -3,6 +3,15 @@ from rest_framework.views import exception_handler
 
 def custom_exception_handler(exc, context):
     """统一 API 响应格式：{code, message, data}"""
+    # 处理单终端登录被踢下线
+    from apps.core.utils.single_session_auth import ForceLogoutError
+    if isinstance(exc, ForceLogoutError):
+        from rest_framework.response import Response
+        return Response(
+            {"code": 1003, "message": str(exc), "data": None},
+            status=exc.status_code,
+        )
+
     response = exception_handler(exc, context)
     if response is not None:
         detail = response.data

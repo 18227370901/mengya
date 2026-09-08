@@ -4,9 +4,12 @@ from rest_framework import serializers
 from ..models import (
     BabyProfile,
     BrandProfile,
+    FetalStory,
     HealthRecord,
+    KidsEncyclopedia,
     Notification,
     Product,
+    Recipe,
     ShoppingList,
     ShoppingListItem,
     TimelineEvent,
@@ -184,6 +187,53 @@ class TimelineSerializer(serializers.ModelSerializer):
         ]
 
 
+class RecipeSerializer(serializers.ModelSerializer):
+    period_label = serializers.CharField(source="get_period_display", read_only=True)
+
+    class Meta:
+        model = Recipe
+        fields = [
+            "id",
+            "title",
+            "nutrient_tag",
+            "period",
+            "period_label",
+            "period_month",
+            "ingredients",
+            "steps",
+            "nutrition_tip",
+            "cover_image",
+            "sort_order",
+            "view_count",
+            "created_at",
+        ]
+        read_only_fields = ["id", "view_count", "created_at"]
+
+
+class KidsEncyclopediaSerializer(serializers.ModelSerializer):
+    chapter_label = serializers.CharField(source="get_chapter_display", read_only=True)
+
+    class Meta:
+        model = KidsEncyclopedia
+        fields = [
+            "id",
+            "chapter",
+            "chapter_label",
+            "question_number",
+            "question",
+            "option_a",
+            "option_b",
+            "option_c",
+            "answer",
+            "comic_dialogue",
+            "cover_image",
+            "sort_order",
+            "view_count",
+            "created_at",
+        ]
+        read_only_fields = ["id", "view_count", "created_at"]
+
+
 class ShoppingListItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
 
@@ -268,3 +318,30 @@ class FavoriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserFavorite
         fields = ["id", "favorite_type", "object_id", "note", "created_at"]
+
+
+class FetalStorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FetalStory
+        fields = [
+            "id",
+            "title",
+            "title_en",
+            "subtitle",
+            "subtitle_en",
+            "week_start",
+            "day_offset",
+            "day_index",
+            "content",
+            "content_en",
+            "tips",
+            "tips_en",
+            "cover_image",
+            "narrator",
+            "source",
+            "source_en",
+            "sort_order",
+            "view_count",
+            "created_at",
+        ]
+        read_only_fields = ["id", "view_count", "created_at"]

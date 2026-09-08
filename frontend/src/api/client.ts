@@ -28,10 +28,22 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem("mengya_access");
-      localStorage.removeItem("mengya_refresh");
-      if (!window.location.pathname.startsWith("/login")) {
-        window.location.href = "/login";
+      const errCode = error.response?.data?.code;
+      // code=1003 表示被踢下线（在其他设备登录）
+      if (errCode === 1003) {
+        localStorage.removeItem("mengya_access");
+        localStorage.removeItem("mengya_refresh");
+        if (!window.location.pathname.startsWith("/login")) {
+          // 延迟跳转以便页面能先显示提示
+          sessionStorage.setItem("mengya_kicked", "1");
+          window.location.href = "/login?kicked=1";
+        }
+      } else {
+        localStorage.removeItem("mengya_access");
+        localStorage.removeItem("mengya_refresh");
+        if (!window.location.pathname.startsWith("/login")) {
+          window.location.href = "/login";
+        }
       }
     }
     const msg = error.response?.data?.message || error.message || "网络错误";

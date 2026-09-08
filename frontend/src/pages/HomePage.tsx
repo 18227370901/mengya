@@ -4,6 +4,11 @@ import {
   Activity,
   ArrowRight,
   Bot,
+  BookOpen,
+  CalendarDays,
+  ChefHat,
+  ChevronRight,
+  Heart,
   PackageSearch,
   Sprout,
 } from "lucide-react";
@@ -12,9 +17,24 @@ import { useAuthStore } from "@/store/authStore";
 import type { Product, TimelineItem } from "@/types";
 import ProductCard from "@/components/ProductCard";
 
+// 胎儿大小比喻
+const FETUS_SIZE: Record<number, string> = {
+  1: "针尖大小", 2: "针尖大小", 3: "芝麻粒", 4: "小海马·4mm",
+  5: "苹果子", 6: "松子仁·0.6cm", 7: "小蓝莓", 8: "覆盆子·1.6cm",
+  9: "葡萄·2.3cm", 10: "草莓·3.1cm", 11: "无花果·4.1cm", 12: "李子·6cm",
+  13: "桃子·7.5cm", 14: "柠檬·8.7cm", 15: "苹果·10cm", 16: "牛油果·11.6cm",
+  17: "石榴·13cm", 18: "彩椒·14.2cm", 19: "番茄·15cm", 20: "香蕉·16.5cm",
+  21: "胡萝卜·26.7cm", 22: "木瓜·27.8cm", 23: "大芒果·28.9cm", 24: "玉米·30cm",
+  25: "花椰菜·34.6cm", 26: "生菜·35.6cm", 27: "白菜·36.6cm", 28: "茄子·37.6cm",
+  29: "南瓜·38.6cm", 30: "大白菜·39.9cm", 31: "椰子·41.1cm", 32: "菠萝·42.4cm",
+  33: "哈密瓜·43.7cm", 34: "西柚·45cm", 35: "蜜瓜·46.2cm", 36: "木瓜·47.4cm",
+  37: "西瓜·48.6cm", 38: "韭菜·49.8cm", 39: "小西瓜·50.7cm", 40: "南瓜·51.2cm",
+};
+
 export default function HomePage() {
   const { user, stage } = useAuthStore();
   const [essentials, setEssentials] = useState<TimelineItem[]>([]);
+  const [weekItems, setWeekItems] = useState<TimelineItem[]>([]);
   const [recommend, setRecommend] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -22,22 +42,30 @@ export default function HomePage() {
   useEffect(() => {
     setLoading(true);
     setError("");
+    const weekStage = stage?.is_pregnant && stage.value
+      ? `pregnancy_${Math.min(Math.max(1, stage.value), 40)}w`
+      : undefined;
     Promise.all([
       timelineApi.list({ essential: true }).catch(() => [] as TimelineItem[]),
       productApi.list({ sort: "rating" }).catch(() => [] as Product[]),
+      ...(weekStage ? [timelineApi.list({ stage: weekStage }).catch(() => [] as TimelineItem[])] : []),
     ])
-      .then(([e, r]) => {
+      .then(([e, r, w]) => {
         setEssentials(e);
         setRecommend(r.slice(0, 4));
+        if (w) setWeekItems(w);
       })
       .catch(() => setError("数据加载失败，请刷新重试"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [stage]);
 
   const quickEntries = [
+    { to: "/weekly", label: "孕期周历", icon: CalendarDays, desc: "40周全程知识导航" },
+    { to: "/fetal-stories", label: "胎教故事", icon: Heart, desc: "每天一个温馨故事" },
+    { to: "/recipes", label: "孕期食谱", icon: ChefHat, desc: "288道专属怀孕餐" },
+    { to: "/kids-encyclopedia", label: "幼儿百科", icon: BookOpen, desc: "57个趣味人体问答" },
     { to: "/shopping-list/generate", label: "智能待产包", icon: PackageSearch, desc: "季节+分娩方式自适应" },
     { to: "/health", label: "健康中心", icon: Activity, desc: "产检/生长曲线/疫苗" },
-    { to: "/compare", label: "产品对比", icon: ArrowRight, desc: "五维雷达图对比" },
     { to: "/ai-assistant", label: "AI小助手", icon: Bot, desc: "7×24小时问答比价" },
   ];
 
@@ -55,6 +83,9 @@ export default function HomePage() {
       </div>
     );
   }
+
+  const currentWeek = stage?.is_pregnant ? stage.value : null;
+  const fetusSize = currentWeek ? FETUS_SIZE[currentWeek] : null;
 
   return (
     <div className="space-y-8">
@@ -78,8 +109,52 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* 孕周状态卡片 - 仅孕期用户显示 */}
+      {currentWeek && fetusSize && (
+        <section className="card p-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 flex-col items-center justify-center rounded-2xl bg-brand-50">
+                <span className="text-2xl font-bold text-brand-600">{currentWeek}</span>
+                <span className="text-xs text-brand-400">周</span>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">宝宝现在大约</p>
+                <p className="text-lg font-semibold text-gray-800">{fetusSize}</p>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  {currentWeek <= 12 ? "孕早期" : currentWeek <= 27 ? "孕中期" : "孕晚期"} ·
+                  距预产期约 {Math.max(0, 40 - currentWeek)} 周
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/weekly"
+              className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-100"
+            >
+              本周详情 <ChevronRight className="h-4 w-4" />
+            </Link>
+          </div>
+          {weekItems.length > 0 && (
+            <div className="mt-4 border-t border-orange-50 pt-3">
+              <p className="mb-2 text-xs font-medium text-gray-400">本周知识点</p>
+              <div className="flex flex-wrap gap-2">
+                {weekItems.slice(0, 4).map((item) => (
+                  <Link
+                    key={item.id}
+                    to={`/timeline/${item.id}`}
+                    className="rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-600 transition hover:bg-brand-50 hover:text-brand-600"
+                  >
+                    {item.title}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* 快捷入口 */}
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         {quickEntries.map((entry) => (
           <Link key={entry.to} to={entry.to} className="card hover:shadow-md transition">
             <div className="flex items-center gap-3">

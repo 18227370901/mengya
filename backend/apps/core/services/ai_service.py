@@ -29,15 +29,20 @@ GENERAL_CHAT_PROMPT = """
 如果上方有网络搜索结果，请优先基于搜索结果回答用户的问题，并在回答末尾标注信息来源。
 如果上方显示"（无网络搜索结果）"，则按你的知识回答；如涉及实时信息请如实告知可能不够准确。
 
+## 用户当前阶段
+{user_stage}
+
+## 本周知识库（基于用户当前孕周）
+{week_knowledge}
+
+如果上方有本周知识库内容，请在回答孕产/胎儿发育/营养/产检/胎教等相关问题时，优先参考这些知识进行回答，使回答更有针对性。
+
 ## 用户问题
 {user_query}
 
-## 当前阶段（如有）
-{user_stage}
-
 ## 输出要求
 1. 语气温暖、耐心，像朋友聊天一样
-2. 如果涉及母婴/育儿/孕产相关问题，可结合用户阶段给出建议
+2. 如果涉及母婴/育儿/孕产相关问题，可结合用户阶段和本周知识库给出建议
 3. 如果涉及医疗问题，提醒用户以医生建议为准
 4. 回答尽量简洁明了，避免冗长
 5. 如果有网络搜索结果，回答末尾用小字标注"（信息来源：网络搜索）"
@@ -192,6 +197,48 @@ def _local_answer(query: str, stage_label: str = "") -> str:
     )
 
 
+def _build_week_knowledge(user) -> str:
+    """根据用户孕周构建知识库摘要"""
+    if not user or not getattr(user, "is_pregnant", False) or not user.due_date:
+        return "（用户非孕期或未设置预产期）"
+
+    from datetime import date as date_cls
+    from apps.core.models import TimelineEvent
+
+    # 计算孕周
+    today = date_cls.today()
+    days_pregnant = (today - user.due_date).days + 280  # 预产期=末次月经+280天
+    if days_pregnant < 7:
+        return "（孕周计算异常）"
+    week = max(1, min(40, days_pregnant // 7))
+
+    # 获取本周所有时间轴事件
+    events = TimelineEvent.objects.filter(
+        stage_type="pregnancy_week", stage_value=week
+    ).order_by("sort_order")
+
+    if not events:
+        return f"（第{week}周暂无知识库数据）"
+
+    lines = [f"第{week}周知识点："]
+    for e in events:
+        line = f"- [{e.get_category_display()}] {e.title}"
+        if e.content:
+            # 截取前120字
+            content = e.content[:120]
+            if len(e.content) > 120:
+                content += "…"
+            line += f"：{content}"
+        if e.tips:
+            tips = e.tips[:60]
+            if len(e.tips) > 60:
+                tips += "…"
+            line += f"（小贴士：{tips}）"
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
 def ai_chat(query_text: str, stage_label: str = "", user=None) -> dict:
     """AI 问答主入口：按顺序尝试多个 AI 配置，全部失败后回退本地引擎"""
     start = time.time()
@@ -205,6 +252,9 @@ def ai_chat(query_text: str, stage_label: str = "", user=None) -> dict:
         search_context = search_and_summarize(query_text, max_results=5)
         used_search = bool(search_context)
 
+    # 构建本周知识库
+    week_knowledge = _build_week_knowledge(user)
+
     prompt = GENERAL_CHAT_PROMPT.format(
         today=datetime.now().strftime("%Y年%m月%d日"),
         weekday=("星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")[datetime.now().weekday()],
@@ -212,6 +262,7 @@ def ai_chat(query_text: str, stage_label: str = "", user=None) -> dict:
         user_stage=stage_label or "未设置",
         search_context=search_context,
         has_search="以下是网络搜索结果" if search_context else "（无网络搜索结果）",
+        week_knowledge=week_knowledge,
     )
 
     configs = _build_config_list(user)

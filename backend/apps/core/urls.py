@@ -6,12 +6,15 @@ from . import views
 router = DefaultRouter()
 router.register(r"babies", views.BabyViewSet, basename="baby")
 router.register(r"timeline", views.TimelineViewSet, basename="timeline")
+router.register(r"recipes", views.RecipeViewSet, basename="recipe")
+router.register(r"kids-encyclopedia", views.KidsEncyclopediaViewSet, basename="kids-encyclopedia")
 router.register(r"products", views.ProductViewSet, basename="product")
 router.register(r"brands", views.BrandViewSet, basename="brand")
 router.register(r"shopping-lists", views.ShoppingListViewSet, basename="shopping-list")
 router.register(r"health/records", views.HealthRecordViewSet, basename="health-record")
 router.register(r"notifications", views.NotificationViewSet, basename="notification")
 router.register(r"favorites", views.FavoriteViewSet, basename="favorite")
+router.register(r"fetal-stories", views.FetalStoryViewSet, basename="fetal-story")
 
 urlpatterns = [
     path("auth/register/", views.register, name="register"),
@@ -38,5 +41,10 @@ urlpatterns = [
     path("ai/compare/", views.ai_compare, name="ai-compare"),
     path("ai/history/", views.ai_history, name="ai-history"),
     path("ai/suggestions/", views.ai_suggestions, name="ai-suggestions"),
+    path("ai/sessions/", views.ai_sessions, name="ai-sessions"),
+    path("ai/sessions/create/", views.ai_session_create, name="ai-session-create"),
+    path("ai/sessions/<int:session_id>/", views.ai_session_detail, name="ai-session-detail"),
+    path("ai/sessions/<int:session_id>/rename/", views.ai_session_rename, name="ai-session-rename"),
+    path("ai/sessions/<int:session_id>/delete/", views.ai_session_delete, name="ai-session-delete"),
     path("", include(router.urls)),
 ]

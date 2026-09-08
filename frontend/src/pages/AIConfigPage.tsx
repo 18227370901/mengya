@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Bot, ChevronDown, ChevronUp, Plus, Settings, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, ChevronDown, ChevronUp, Eye, EyeOff, Plus, Settings, Trash2 } from "lucide-react";
 import { authApi } from "@/api/auth";
 import type { AIConfigItem } from "@/api/auth";
 
@@ -12,6 +12,8 @@ export default function AIConfigPage() {
   const [aiSaving, setAISaving] = useState(false);
   const [aiSaved, setAISaved] = useState(false);
   const [authUsers, setAuthUsers] = useState<Array<{ id: number; phone: string; nickname: string; is_staff: boolean; ai_authorized: boolean }>>([]);
+  const [showKeys, setShowKeys] = useState<Record<number, boolean>>({});
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     authApi.aiConfig().then((data) => {
@@ -21,8 +23,35 @@ export default function AIConfigPage() {
       if (data.can_manage) {
         authApi.aiAuthList().then(setAuthUsers).catch(() => setAuthUsers([]));
       }
-    }).catch(() => {});
+    }).catch(() => {
+      // 非管理员访问被拒绝
+      setAccessDenied(true);
+    });
   }, []);
+
+  if (accessDenied) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-6">
+        <div className="flex items-center gap-3">
+          <button className="rounded-xl bg-white p-2 shadow-sm hover:shadow-md" onClick={() => navigate("/profile")}>
+            <ArrowLeft className="h-5 w-5 text-gray-500" />
+          </button>
+          <div className="flex items-center gap-2">
+            <Bot className="h-5 w-5 text-brand-500" />
+            <h1 className="text-lg font-bold text-gray-800">AI 助手配置</h1>
+          </div>
+        </div>
+        <div className="card py-12 text-center">
+          <Bot className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+          <p className="text-gray-500">此页面仅管理员可访问</p>
+          <p className="mt-2 text-sm text-gray-400">如需使用 AI 助手，请联系管理员授权</p>
+          <button className="btn-secondary mt-4" onClick={() => navigate("/profile")}>
+            返回个人中心
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -102,13 +131,23 @@ export default function AIConfigPage() {
               <div className="space-y-2">
                 <div>
                   <label className="label">API Key</label>
-                  <input
-                    className="input"
-                    type="password"
-                    placeholder="sk-..."
-                    value={cfg.api_key}
-                    onChange={(e) => setAIConfigs((prev) => prev.map((c, i) => i === idx ? { ...c, api_key: e.target.value } : c))}
-                  />
+                  <div className="relative">
+                    <input
+                      className="input pr-10"
+                      type={showKeys[idx] ? "text" : "password"}
+                      placeholder="sk-..."
+                      value={cfg.api_key}
+                      onChange={(e) => setAIConfigs((prev) => prev.map((c, i) => i === idx ? { ...c, api_key: e.target.value } : c))}
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-brand-500"
+                      onClick={() => setShowKeys((prev) => ({ ...prev, [idx]: !prev[idx] }))}
+                      title={showKeys[idx] ? "隐藏" : "显示"}
+                    >
+                      {showKeys[idx] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>

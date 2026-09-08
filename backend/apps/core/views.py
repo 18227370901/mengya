@@ -21,11 +21,16 @@ from .models import (
     AuditLog,
     BabyProfile,
     BrandProfile,
+    ChatMessage,
+    ChatSession,
+    FetalStory,
     HealthRecord,
     InviteLink,
     Notification,
     Product,
     ProductComparison,
+    Recipe,
+    KidsEncyclopedia,
     ShoppingList,
     ShoppingListItem,
     SystemSetting,
@@ -35,10 +40,13 @@ from .models import (
 from .serializers import (
     BabyProfileSerializer,
     BrandProfileSerializer,
+    FetalStorySerializer,
     FavoriteSerializer,
     HealthRecordSerializer,
     NotificationSerializer,
     ProductSerializer,
+    RecipeSerializer,
+    KidsEncyclopediaSerializer,
     ShoppingListSerializer,
     TimelineSerializer,
     UserSerializer,
@@ -297,6 +305,12 @@ def login(request):
     request.session.pop("login_captcha", None)
 
     refresh = RefreshToken.for_user(user)
+
+    # ===== 单终端登录：记录当前 access token 的 JTI，旧 token 自动失效 =====
+    access_token = refresh.access_token
+    user.active_token_jti = str(access_token["jti"])
+    user.save(update_fields=["active_token_jti"])
+
     audit(request, "login", "登录成功", "用户", user.username,
           user.nickname or user.username, detail=f"账号：{user.username}", user=user)
     return Response(
@@ -305,7 +319,7 @@ def login(request):
             "message": "登录成功",
             "data": {
                 "user": UserSerializer(user).data,
-                "access": str(refresh.access_token),
+                "access": str(access_token),
                 "refresh": str(refresh),
             },
         }
@@ -433,23 +447,16 @@ class MeView(APIView):
 
 class AIConfigView(APIView):
     """AI 助手配置：支持多配置列表管理
-    仅管理员(is_staff)或被授权用户(ai_authorized)可访问。
+    仅管理员(is_staff)可查看和修改配置。
+    被授权用户(ai_authorized)仅可在 AI 聊天时使用管理员共享的配置，无权查看或修改。
 
     GET  返回: { ai_configs: [...], has_global_key, can_manage }
     PUT  接收: { ai_configs: [{name, api_key, base_url, model, enabled}, ...] }
            也兼容旧版单字段: { ai_api_key, ai_base_url, ai_model }
     """
-    permission_classes = [IsAuthenticated]
-
-    def _check_access(self, user):
-        return user.is_staff or user.ai_authorized
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
-        if not self._check_access(request.user):
-            return Response(
-                {"code": 4031, "message": "无权限访问 AI 配置，请联系管理员", "data": None},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         user = request.user
         ai_configs = user.ai_configs or []
         # 若多配置为空但旧版单配置有值，自动迁移
@@ -475,11 +482,6 @@ class AIConfigView(APIView):
         })
 
     def put(self, request):
-        if not self._check_access(request.user):
-            return Response(
-                {"code": 4031, "message": "无权限访问 AI 配置，请联系管理员", "data": None},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         user = request.user
         ai_configs_data = request.data.get("ai_configs")
 
@@ -881,6 +883,86 @@ class TimelineViewSet(viewsets.ModelViewSet):
         })
 
 
+# ============ 孕期食谱 ============
+
+class RecipeViewSet(viewsets.ModelViewSet):
+    serializer_class = RecipeSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Recipe.objects.all()
+        period = self.request.query_params.get("period")
+        period_month = self.request.query_params.get("period_month")
+        nutrient = self.request.query_params.get("nutrient")
+        search = self.request.query_params.get("search")
+        if period:
+            qs = qs.filter(period=period)
+        if period_month:
+            qs = qs.filter(period_month=period_month)
+        if nutrient:
+            qs = qs.filter(nutrient_tag__icontains=nutrient)
+        if search:
+            qs = qs.filter(title__icontains=search)
+        return qs
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAuthenticated(), IsAdminUser()]
+        return super().get_permissions()
+
+    @action(detail=True, methods=["post"])
+    def increment_view(self, request, pk=None):
+        """增加浏览次数"""
+        recipe = self.get_object()
+        recipe.view_count += 1
+        recipe.save(update_fields=["view_count"])
+        return Response({"code": 0, "message": "ok", "data": {"view_count": recipe.view_count}})
+
+    @action(detail=False, methods=["get"])
+    def nutrients(self, request):
+        """获取所有营养标签及对应食谱数"""
+        from django.db.models import Count
+        qs = Recipe.objects.exclude(nutrient_tag="").values("nutrient_tag").annotate(count=Count("id")).order_by("-count")
+        return Response({"code": 0, "message": "ok", "data": list(qs)})
+
+
+# ============ 幼儿百科 ============
+
+class KidsEncyclopediaViewSet(viewsets.ModelViewSet):
+    serializer_class = KidsEncyclopediaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = KidsEncyclopedia.objects.all()
+        chapter = self.request.query_params.get("chapter")
+        search = self.request.query_params.get("search")
+        if chapter:
+            qs = qs.filter(chapter=chapter)
+        if search:
+            qs = qs.filter(question__icontains=search)
+        return qs
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAuthenticated(), IsAdminUser()]
+        return super().get_permissions()
+
+    @action(detail=True, methods=["post"])
+    def increment_view(self, request, pk=None):
+        """增加浏览次数"""
+        item = self.get_object()
+        item.view_count += 1
+        item.save(update_fields=["view_count"])
+        return Response({"code": 0, "message": "ok", "data": {"view_count": item.view_count}})
+
+    @action(detail=False, methods=["get"])
+    def chapters(self, request):
+        """获取章节列表及问题数"""
+        from django.db.models import Count
+        qs = KidsEncyclopedia.objects.values("chapter").annotate(count=Count("id")).order_by("chapter")
+        return Response({"code": 0, "message": "ok", "data": list(qs)})
+
+
 # ============ 商品 ============
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -1197,16 +1279,51 @@ def ai_chat(request):
             {"code": 2001, "message": "请输入问题", "data": None},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    session_id = request.data.get("session_id")
     stage = get_stage_info(request.user.due_date, request.user.baby_birthday)
     result = ai_service.ai_chat(query_text, stage_label=stage["label"], user=request.user)
 
+    # 获取或创建会话
+    session = None
+    if session_id:
+        session = ChatSession.objects.filter(id=session_id, user=request.user).first()
+    if not session:
+        title = query_text[:30] + ("…" if len(query_text) > 30 else "")
+        session = ChatSession.objects.create(user=request.user, title=title)
+
+    # 保存用户消息
+    ChatMessage.objects.create(
+        session=session,
+        role="user",
+        content=query_text,
+    )
+    # 保存 AI 消息
+    ChatMessage.objects.create(
+        session=session,
+        role="ai",
+        content=result["response"],
+        used_config_name=result.get("used_config_name", ""),
+        used_search=result.get("used_search", False),
+        error_hint=result.get("error_hint", ""),
+    )
+
+    # 如果是新建会话且第一条消息，用问题更新标题
+    if not session_id and session.messages.count() == 2:
+        session.title = title
+        session.save(update_fields=["title"])
+
+    # 兼容旧版 AIQueryLog
     AIQueryLog.objects.create(
         user=request.user,
+        session_id=str(session.id),
         query_type="qa",
         query_text=query_text,
         response_text=result["response"],
         response_time_ms=result.get("latency_ms", 0),
     )
+
+    result["session_id"] = session.id
+    result["session_title"] = session.title
     return Response({"code": 0, "message": "success", "data": result})
 
 
@@ -1226,9 +1343,94 @@ def ai_compare(request):
     return Response({"code": 0, "message": "success", "data": result})
 
 
+# ============ AI 会话管理 ============
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def ai_sessions(request):
+    """获取当前用户的会话列表（不含消息内容，仅摘要）"""
+    sessions = ChatSession.objects.filter(user=request.user).order_by("-updated_at")[:100]
+    data = []
+    for s in sessions:
+        msg_count = s.messages.count()
+        last_msg = s.messages.order_by("-created_at").first()
+        data.append({
+            "id": s.id,
+            "title": s.title,
+            "message_count": msg_count,
+            "last_message": last_msg.content[:80] if last_msg else "",
+            "last_role": last_msg.role if last_msg else "",
+            "created_at": s.created_at.isoformat(),
+            "updated_at": s.updated_at.isoformat(),
+        })
+    return Response({"code": 0, "message": "success", "data": data})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def ai_session_detail(request, session_id):
+    """获取某个会话的完整消息列表"""
+    session = get_object_or_404(ChatSession, id=session_id, user=request.user)
+    messages = session.messages.order_by("created_at")
+    data = {
+        "id": session.id,
+        "title": session.title,
+        "created_at": session.created_at.isoformat(),
+        "updated_at": session.updated_at.isoformat(),
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "used_config_name": m.used_config_name,
+                "used_search": m.used_search,
+                "error_hint": m.error_hint,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in messages
+        ],
+    }
+    return Response({"code": 0, "message": "success", "data": data})
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def ai_session_rename(request, session_id):
+    """重命名会话标题"""
+    session = get_object_or_404(ChatSession, id=session_id, user=request.user)
+    title = (request.data.get("title") or "").strip()
+    if not title:
+        return Response(
+            {"code": 2001, "message": "标题不能为空", "data": None},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    session.title = title[:100]
+    session.save(update_fields=["title"])
+    return Response({"code": 0, "message": "已更新", "data": {"id": session.id, "title": session.title}})
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def ai_session_delete(request, session_id):
+    """删除会话及其所有消息"""
+    session = get_object_or_404(ChatSession, id=session_id, user=request.user)
+    session.delete()
+    return Response({"code": 0, "message": "已删除", "data": None})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ai_session_create(request):
+    """创建新会话"""
+    title = (request.data.get("title") or "新会话").strip()[:100]
+    session = ChatSession.objects.create(user=request.user, title=title)
+    return Response({"code": 0, "message": "success", "data": {"id": session.id, "title": session.title}})
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def ai_history(request):
+    """旧版兼容：获取最近的 AI 问答记录"""
     logs = AIQueryLog.objects.filter(user=request.user)[:50]
     data = [
         {
@@ -1687,3 +1889,48 @@ class UserDeleteView(APIView):
               user.nickname or user.username, f"用户自助注销账号 {user.username}")
         user.delete()
         return Response({"code": 0, "message": "账号已注销", "data": None})
+
+
+# ============ 胎教故事 ============
+
+class FetalStoryViewSet(viewsets.ModelViewSet):
+    """胎教故事 ViewSet —— 按孕周天序展示，支持中英双语"""
+    queryset = FetalStory.objects.all()
+    serializer_class = FetalStorySerializer
+
+    def get_permissions(self):
+        if self.action in ["list", "retrieve"]:
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+
+    def list(self, request, *args, **kwargs):
+        """列表：支持按 week_start / narrator 筛选"""
+        week = request.query_params.get("week")
+        narrator = request.query_params.get("narrator")
+        qs = self.get_queryset()
+        if week:
+            qs = qs.filter(week_start=int(week))
+        if narrator:
+            qs = qs.filter(narrator=narrator)
+        qs = qs.order_by("week_start", "day_offset", "day_index")
+        serializer = self.get_serializer(qs, many=True)
+        return Response({"code": 0, "message": "success", "data": serializer.data})
+
+    @action(detail=False, methods=["get"])
+    def weeks(self, request):
+        """获取所有有故事的孕周列表"""
+        weeks = (
+            self.get_queryset()
+            .values_list("week_start", flat=True)
+            .distinct()
+            .order_by("week_start")
+        )
+        return Response({"code": 0, "message": "success", "data": list(weeks)})
+
+    @action(detail=True, methods=["post"])
+    def increment_view(self, request, pk=None):
+        """增加阅读次数"""
+        story = self.get_object()
+        story.view_count += 1
+        story.save(update_fields=["view_count"])
+        return Response({"code": 0, "message": "success", "data": {"view_count": story.view_count}})

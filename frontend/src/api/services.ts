@@ -1,5 +1,5 @@
 import api from "./client";
-import type { ApiResponse, HealthRecord, ShoppingList } from "@/types";
+import type { ApiResponse, ChatSessionDetail, ChatSessionSummary, HealthRecord, ShoppingList, AIChatResult } from "@/types";
 
 export const shoppingApi = {
   list: () => api.get<ApiResponse<ShoppingList[]>>("/shopping-lists/").then((r) => r.data.data),
@@ -31,9 +31,27 @@ export const healthApi = {
 };
 
 export const aiApi = {
-  chat: (query: string) => api.post<ApiResponse<{ query: string; response: string; used_openai: boolean; used_config_name?: string; latency_ms: number; suggestions: string[]; error_hint?: string }>>("/ai/chat/", { query }).then((r) => r.data.data),
+  chat: (query: string, sessionId?: number) =>
+    api.post<ApiResponse<AIChatResult>>("/ai/chat/", { query, session_id: sessionId }).then((r) => r.data.data),
 
-  history: () => api.get<ApiResponse<Array<{ id: number; query: string; response: string; created_at: string }>>>("/ai/history/").then((r) => r.data.data),
+  history: () =>
+    api.get<ApiResponse<Array<{ id: number; query: string; response: string; created_at: string }>>>("/ai/history/").then((r) => r.data.data),
 
   suggestions: () => api.get<ApiResponse<string[]>>("/ai/suggestions/").then((r) => r.data.data),
+
+  // 会话管理
+  sessions: () =>
+    api.get<ApiResponse<ChatSessionSummary[]>>("/ai/sessions/").then((r) => r.data.data),
+
+  sessionDetail: (id: number) =>
+    api.get<ApiResponse<ChatSessionDetail>>(`/ai/sessions/${id}/`).then((r) => r.data.data),
+
+  sessionCreate: (title?: string) =>
+    api.post<ApiResponse<{ id: number; title: string }>>("/ai/sessions/create/", { title }).then((r) => r.data.data),
+
+  sessionRename: (id: number, title: string) =>
+    api.patch<ApiResponse<{ id: number; title: string }>>(`/ai/sessions/${id}/rename/`, { title }).then((r) => r.data.data),
+
+  sessionDelete: (id: number) =>
+    api.delete<ApiResponse<null>>(`/ai/sessions/${id}/delete/`).then((r) => r.data.data),
 };

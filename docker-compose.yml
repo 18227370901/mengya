@@ -37,10 +37,13 @@ services:
     environment:
       DATABASE_URL: postgresql://mengya:mengya123@db:5432/mengya
       REDIS_URL: redis://redis:6379/0
+      ADMIN_PHONE: ${ADMIN_PHONE:-13800000001}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      ADMIN_NICKNAME: ${ADMIN_NICKNAME:-管理员}
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -49,6 +52,7 @@ services:
     command: >
       sh -c "python manage.py migrate &&
              python manage.py init_data --skip-if-exists &&
+             python manage.py ensure_admin &&
              python manage.py runserver 0.0.0.0:8000"
 
   worker:
@@ -72,10 +76,22 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
     depends_on:
       - backend
     command: npm run dev -- --host 0.0.0.0
+
+  nginx:
+    image: nginx:alpine
+    container_name: mengya_nginx
+    ports:
+      - "${EXTERNAL_PORT:-10224}:10224"
+    volumes:
+      - ./nginx/mengya_ssl.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frontend
+      - backend
 
 volumes:
   pgdata:

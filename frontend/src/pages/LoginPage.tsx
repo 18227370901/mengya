@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, KeyRound, RefreshCw, Sprout, Lock } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const kicked = searchParams.get("kicked") === "1";
 
   // 验证码（风控）
   const [needCaptcha, setNeedCaptcha] = useState(false);
@@ -191,6 +193,12 @@ export default function LoginPage() {
           <h1 className="mt-2 text-2xl font-bold text-gray-800">欢迎回到萌芽</h1>
           <p className="mt-1 text-sm text-gray-400">从第一次胎动到第一次背书包</p>
         </div>
+
+        {kicked && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm text-amber-600">您的账号已在其他设备登录，请重新登录</p>
+          </div>
+        )}
 
         {!showForgot ? (
           <>
