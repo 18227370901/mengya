@@ -3,12 +3,17 @@
 # 萌芽（mengya）平台服务管理脚本
 #
 # 用法：
+#   ./run.sh               启动全部服务（无参数默认启动，交互式选择启动方式）
 #   ./run.sh start          启动全部服务（交互式选择启动方式）
 #   ./run.sh stop           停止全部服务
 #   ./run.sh restart        重启全部服务
 #   ./run.sh status         查看服务运行状态
 #   ./run.sh add_nginx      生成 nginx SSL 配置（需单独手动执行）
 #   ./run.sh help           显示帮助
+#
+# 说明：
+#   - 支持 ./run.sh 或 sh run.sh 方式执行（自动改用 bash 运行本脚本）
+#   - 无参数直接回车时，默认执行启动，并显示脚本用法提示
 #
 # 启动方式（二选一）：
 #   MODE=docker   使用 docker compose（推荐，适合服务器/容器环境）
@@ -28,6 +33,7 @@
 #   EXTERNAL_PORT     外部访问端口（默认 10224，nginx SSL 反代）
 #
 # 用法示例：
+#   ./run.sh
 #   ./run.sh start
 #   MODE=docker ./run.sh start                      # docker compose 启动
 #   MODE=local ./run.sh start                       # 传统方式启动
@@ -40,6 +46,18 @@
 # ============================================================
 
 set -e
+
+# ===== bash 兼容：若使用 sh 执行（如 dash），自动改用 bash 重新执行 =====
+# 脚本内使用了 read -p、local 等 bash 语法，sh（dash）下会报错，
+# 因此检测到非 bash 解释器时，自动 exec bash 重新运行，保证 sh run.sh 也可用。
+if [ -z "$BASH_VERSION" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    else
+        echo "[错误] 未找到 bash，请使用: bash run.sh 运行本脚本" >&2
+        exit 1
+    fi
+fi
 
 # ===== 配置项（可从环境变量覆盖）=====
 export ADMIN_USERNAME="${ADMIN_USERNAME:-13800000001}"
@@ -508,6 +526,23 @@ show_status_local() {
 CMD="${1:-start}"
 case "$CMD" in
     start|"")
+        if [ -z "$1" ]; then
+            echo ""
+            echo "============================================"
+            echo "  萌芽（mengya）平台服务管理脚本"
+            echo "============================================"
+            echo "  无参数执行，默认启动服务。"
+            echo "  可用子命令："
+            echo "    ./run.sh start      启动服务（当前默认执行）"
+            echo "    ./run.sh stop       停止服务"
+            echo "    ./run.sh restart    重启服务"
+            echo "    ./run.sh status     查看状态"
+            echo "    ./run.sh add_nginx  生成 nginx SSL 配置"
+            echo "    ./run.sh help       查看帮助"
+            echo "  启动方式：MODE=docker|local 指定，或交互式选择"
+            echo "============================================"
+            echo ""
+        fi
         choose_mode
         validate_mode
         save_mode

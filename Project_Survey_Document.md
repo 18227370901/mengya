@@ -3,16 +3,16 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '77c90726-37b2-4441-879b-c2d6e168caa8'
-  PropagateID: '77c90726-37b2-4441-879b-c2d6e168caa8'
-  ReservedCode1: '768a71ad-4e6e-4b5a-b993-2caf8378feee'
-  ReservedCode2: '768a71ad-4e6e-4b5a-b993-2caf8378feee'
+  ProduceID: '365bccc8-e109-423a-aab1-6c851492318e'
+  PropagateID: '365bccc8-e109-423a-aab1-6c851492318e'
+  ReservedCode1: 'c5120814-308b-479d-b1d7-49cb9f9fa6d1'
+  ReservedCode2: 'c5120814-308b-479d-b1d7-49cb9f9fa6d1'
 ---
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.2
-> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式）
+> 文档版本：v1.3
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
 > 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/解决方案设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
@@ -514,12 +514,21 @@ React 18 + TypeScript + Vite + Tailwind CSS 3 + Zustand + ECharts（雷达图/�
 
 | 子命令 | 说明 |
 |---|---|
+| （无参数） | 默认启动服务，先提示脚本用法，再交互式选择启动方式 |
 | `start` | 启动全部服务（交互式选择启动方式） |
 | `stop` | 停止全部服务（按上次选择的模式） |
 | `restart` | 重启全部服务 |
 | `status` | 查看服务运行状态 |
 | `add_nginx` | 生成 nginx SSL 配置（需在服务器上单独手动执行） |
 | `help` | 显示帮助 |
+
+### 10.2a 无参数执行与 sh 兼容性（v1.3 修复）
+
+> 2026-09-10 修复：用户直接输入 `sh run.sh` 或 `./run.sh` 回车时，应引导选择启动方式而不是报错。
+
+- **无参数行为**：`CMD="${1:-start}"` 将无参数默认解析为 `start`，打印「可用子命令」引导信息后进入 `choose_mode` 交互选择启动方式，不再直接报错。
+- **sh 兼容**：脚本顶部增加 bash 检测——当 `$BASH_VERSION` 为空（即被 `sh`/dash 解释执行）时，自动 `exec bash "$0" "$@"` 用 bash 重新运行，避免 `read -p`、`local` 等 bash 语法在 dash 下报错。
+- **效果**：`sh run.sh`、`./run.sh`、`bash run.sh` 三种方式均可用；无参数均进入启动流程并提示用法。
 
 ### 10.3 启动方式选择机制
 
@@ -571,7 +580,8 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 
 ### 10.8 已知限制
 
-- 脚本为 bash 实现，依赖 Linux 环境（`/proc`、`ss`/`lsof`、`nohup`）；Windows 本地（无 WSL）无法直接执行。
+- 脚本为 bash 实现，依赖 Linux 环境（`/proc`、`ss`/`lsof`、`nohup`）；Windows 本地（无 WSL）无法直接执行，需在服务器或 WSL 环境使用。
+- 脚本依赖 bash 语法（`read -p`、`local` 等）；已做 sh→bash 自动重执行兼容，但系统必须已安装 bash。
 - `stop` / `status` 依赖 `.run_mode` 记忆文件判断模式；若从未运行过则默认走传统方式分支。
 - `docker compose` 方式未做版本号强校验，依赖本机已安装 docker compose v2 或 v1 的 `docker-compose`。
 
@@ -719,7 +729,7 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 | `docker-compose.yml` | 5 服务编排（db/redis/backend/worker/frontend + nginx） |
 | `nginx/nginx.conf` | 反向代理（HTTP 80） |
 | `nginx/mengya_ssl.conf` | 反向代理（HTTPS，Docker 编排内使用） |
-| `run.sh` | 服务管理脚本（start/stop/restart/status/add_nginx，支持 docker/local 双模式，2026-09-10 重构） |
+| `run.sh` | 服务管理脚本（start/stop/restart/status/add_nginx，支持 docker/local 双模式；无参数默认启动，兼容 sh 执行；2026-09-10 重构） |
 | `.run_mode` / `.run/` / `logs/` | run.sh 运行时产物（已加入 .gitignore） |
 
 ## 附 B：已知验证结论
