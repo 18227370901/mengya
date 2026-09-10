@@ -31,7 +31,10 @@ services:
       POSTGRES_USER: mengya
       POSTGRES_PASSWORD: mengya123
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18+ 镜像要求：数据卷必须挂载到父目录 /var/lib/postgresql（而非 /var/lib/postgresql/data）
+      # 数据会自动放入镜像内置的子目录（如 18/docker），以支持 pg_upgrade --link 平滑升级
+      # 若挂载到 /var/lib/postgresql/data，PG18 镜像会判定为「unused mount/volume」并拒绝启动（容器 exited 1）
+      - pgdata:/var/lib/postgresql
     ports:
       - "5433:5432"
     healthcheck:

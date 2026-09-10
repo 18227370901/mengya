@@ -3,16 +3,16 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '47141ae5-4502-4b24-bf35-3f82752ea69b'
-  PropagateID: '47141ae5-4502-4b24-bf35-3f82752ea69b'
-  ReservedCode1: '9a879962-bf12-49a7-b1a6-fbc7619c1919'
-  ReservedCode2: '9a879962-bf12-49a7-b1a6-fbc7619c1919'
+  ProduceID: 'f173fc22-bd04-4f19-9f6a-cca638d26631'
+  PropagateID: 'f173fc22-bd04-4f19-9f6a-cca638d26631'
+  ReservedCode1: 'c6bbc29b-72ee-4ae2-b427-c599aa788d2d'
+  ReservedCode2: 'c6bbc29b-72ee-4ae2-b427-c599aa788d2d'
 ---
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.5
-> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停）
+> 文档版本：v1.6
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停；v1.6 更新：2026-09-10，修复 PG18 数据卷挂载点并补充挂载约定）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
 > 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/解决方案设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
@@ -157,7 +157,7 @@ config (settings/urls/celery)
 nginx (:80)
    ├── / → frontend（Vite dev :5173 / 生产构建静态）
    └── /api/、/admin/ → backend（Django :8000）
-                           ├── PostgreSQL 15（:5433）
+                           ├── PostgreSQL（pg18 默认，:5433 宿主机映射；旧方案可用 15-alpine）
                            ├── Redis 7（:6380）
                            └── Celery worker（任务队列，当前无实质任务）
 ```
@@ -603,6 +603,19 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 - run.sh 的 `compose_extra_args()` 启动前组装 `--profile` 参数，`start/restart/stop/status` 均按相同规则执行。
 - 手动控制示例：`ENABLE_WORKER=1 ./run.sh start`、`ENABLE_NGINX=1 ./run.sh start`、`docker compose --profile celery up -d`。
 - 当前项目无 Celery 任务，默认启动 db + backend + frontend 三个服务，redis/worker/nginx 按需启用。
+
+#### ③ PostgreSQL 18+ 数据卷挂载约定（v1.6 新增）
+
+> 2026-09-10 修复：db 容器启动报错（exited 1）的根因与解决方案。
+
+- **PG18+ 官方镜像要求**：数据卷必须挂载到**父目录** `/var/lib/postgresql`（而非旧版习惯的 `/var/lib/postgresql/data`）。数据会自动放入镜像内置的子目录（如 `18/docker`），以支持 `pg_upgrade --link` 平滑升级。
+- 若仍挂载 `/var/lib/postgresql/data`，PG18 镜像会判定为「unused mount/volume」并**直接拒绝启动**（容器 exited 1）。错误信息原文：
+  > in 18+, these Docker images are configured to store database data in a format which is compatible with 'pg_ctlcluster'... The suggested container configuration for 18+ is to place a single mount at /var/lib/postgresql
+- **compose 修改**：`pgdata:/var/lib/postgresql/data` → `pgdata:/var/lib/postgresql`（第 34 行）。
+- **旧数据卷注意**：若旧 `pgdata` 卷是 PG15 格式（此前用 `postgres:15-alpine` 跑过数据），即使改挂载点，PG18 也无法直接读取旧数据。需二选一：
+  1. 清理旧卷重建（`docker compose down -v`，注意会删除全部数据）——适合无重要历史数据；
+  2. 保留旧数据 → 换回 `DB_IMAGE=postgres:15-alpine ./run.sh start`，但挂载点需回退为 `/var/lib/postgresql/data`。
+- 端口说明：compose 中 `5433:5432` 表示**宿主机 5433 → 容器 5432**，容器内部仍为 5432，backend 使用 `db:5432` 连接不受影响。
 
 ### 10.8 已知限制
 

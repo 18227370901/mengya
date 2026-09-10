@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'f3eff81f-d98a-44fd-a05b-8a6d9a4c4f76'
-  PropagateID: 'f3eff81f-d98a-44fd-a05b-8a6d9a4c4f76'
-  ReservedCode1: '4aa835b7-04f3-43fb-baf9-d694975797d3'
-  ReservedCode2: '4aa835b7-04f3-43fb-baf9-d694975797d3'
+  ProduceID: 'e405f0fc-a6a1-4697-b735-a54ac5641f01'
+  PropagateID: 'e405f0fc-a6a1-4697-b735-a54ac5641f01'
+  ReservedCode1: 'd26ad1a6-e960-4df0-9a56-d7bd457cc18c'
+  ReservedCode2: 'd26ad1a6-e960-4df0-9a56-d7bd457cc18c'
 ---
 
 # 萌芽（MengYa）· 母婴全周期陪伴平台
@@ -81,12 +81,11 @@ docker compose up -d --build
 docker compose logs -f backend
 ```
 
-### 镜像复用策略
-
-- **服务器本地已有同名镜像时，Docker 会直接复用，不会重复拉取**（如 `pgvector/pgvector:pg18`、`redis:7-alpine`、`nginx:alpine`）。
-- `run.sh` 启动前会自动检测并提示「已存在本地，直接复用」或「不存在，启动时拉取」。
 - 数据库镜像优先级：`DB_IMAGE` 环境变量 > 本地已有 `pgvector/pgvector:pg18` > 本地已有 `postgres:15-alpine` > 默认 `pgvector/pgvector:pg18`。
 - 注意：`pgvector/pgvector:pg18` 与 `postgres:15-alpine` 数据目录不兼容，切换镜像后旧数据卷需重建。
+
+> **PG18 数据卷挂载约定**：PostgreSQL 18+ 镜像要求数据卷挂载到父目录 `/var/lib/postgresql`（而非旧版 `/var/lib/postgresql/data`），数据会自动放入子目录（如 `18/docker`），以支持 `pg_upgrade --link`。本仓库 `docker-compose.yml` 已按此约定配置（`pgdata:/var/lib/postgresql`）。若挂载到 `/var/lib/postgresql/data`，PG18 会判定为「unused mount/volume」并拒绝启动（容器 exited 1）。
+> 旧 `pgdata` 卷若是 PG15 格式：无重要数据可 `docker compose down -v` 清卷重建；需保留数据则换回 `DB_IMAGE=postgres:15-alpine`（此时挂载点需回退为 `/var/lib/postgresql/data`）。
 
 ### 可选服务（compose profiles）
 
