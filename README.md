@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'e405f0fc-a6a1-4697-b735-a54ac5641f01'
-  PropagateID: 'e405f0fc-a6a1-4697-b735-a54ac5641f01'
-  ReservedCode1: 'd26ad1a6-e960-4df0-9a56-d7bd457cc18c'
-  ReservedCode2: 'd26ad1a6-e960-4df0-9a56-d7bd457cc18c'
+  ProduceID: '811a6307-7400-4838-ae02-626e1d7608b0'
+  PropagateID: '811a6307-7400-4838-ae02-626e1d7608b0'
+  ReservedCode1: 'ce3c15c5-8dc3-4412-b719-60b0251376bd'
+  ReservedCode2: 'ce3c15c5-8dc3-4412-b719-60b0251376bd'
 ---
 
 # 萌芽（MengYa）· 母婴全周期陪伴平台
@@ -86,6 +86,7 @@ docker compose logs -f backend
 
 > **PG18 数据卷挂载约定**：PostgreSQL 18+ 镜像要求数据卷挂载到父目录 `/var/lib/postgresql`（而非旧版 `/var/lib/postgresql/data`），数据会自动放入子目录（如 `18/docker`），以支持 `pg_upgrade --link`。本仓库 `docker-compose.yml` 已按此约定配置（`pgdata:/var/lib/postgresql`）。若挂载到 `/var/lib/postgresql/data`，PG18 会判定为「unused mount/volume」并拒绝启动（容器 exited 1）。
 > 旧 `pgdata` 卷若是 PG15 格式：无重要数据可 `docker compose down -v` 清卷重建；需保留数据则换回 `DB_IMAGE=postgres:15-alpine`（此时挂载点需回退为 `/var/lib/postgresql/data`）。
+> **安全说明**：`docker compose down -v` 仅删除**当前 compose 项目自己的 `pgdata` 卷**（实际卷名 `mengya_pgdata`），**不会删除任何 docker 镜像**（`pgvector/pgvector:pg18` 等仍在本地，可继续复用），也**不影响其他项目的容器、镜像与数据卷**。
 
 ### 可选服务（compose profiles）
 

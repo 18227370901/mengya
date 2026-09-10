@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'f173fc22-bd04-4f19-9f6a-cca638d26631'
-  PropagateID: 'f173fc22-bd04-4f19-9f6a-cca638d26631'
-  ReservedCode1: 'c6bbc29b-72ee-4ae2-b427-c599aa788d2d'
-  ReservedCode2: 'c6bbc29b-72ee-4ae2-b427-c599aa788d2d'
+  ProduceID: 'b23828fc-f57a-40e5-8806-c1bea03b0133'
+  PropagateID: 'b23828fc-f57a-40e5-8806-c1bea03b0133'
+  ReservedCode1: '66d7d3e5-5a0f-4168-9d4e-59f435765bec'
+  ReservedCode2: '66d7d3e5-5a0f-4168-9d4e-59f435765bec'
 ---
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
@@ -615,6 +615,7 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 - **旧数据卷注意**：若旧 `pgdata` 卷是 PG15 格式（此前用 `postgres:15-alpine` 跑过数据），即使改挂载点，PG18 也无法直接读取旧数据。需二选一：
   1. 清理旧卷重建（`docker compose down -v`，注意会删除全部数据）——适合无重要历史数据；
   2. 保留旧数据 → 换回 `DB_IMAGE=postgres:15-alpine ./run.sh start`，但挂载点需回退为 `/var/lib/postgresql/data`。
+- **安全说明**：`docker compose down -v` 仅删除当前 compose 项目自己的 `pgdata` 卷（实际卷名 `mengya_pgdata`），**不会删除任何 docker 镜像**（`pgvector/pgvector:pg18` 等仍保留可复用），也不影响其他项目的容器/镜像/数据卷。
 - 端口说明：compose 中 `5433:5432` 表示**宿主机 5433 → 容器 5432**，容器内部仍为 5432，backend 使用 `db:5432` 连接不受影响。
 
 ### 10.8 已知限制
