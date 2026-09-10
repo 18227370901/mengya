@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Baby, Eye, EyeOff, Heart, KeyRound, LogOut, Package, Plus, Settings, ShieldCheck, Trash2, UserCheck, Users, ClipboardList } from "lucide-react";
+import { Bot, Baby, Bell, Eye, EyeOff, Heart, HeartOff, KeyRound, LogOut, Package, Plus, Settings, ShieldCheck, Trash2, UserCheck, Users, ClipboardList } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 import type { BabyProfile } from "@/types";
@@ -26,6 +26,8 @@ export default function ProfilePage() {
 
   // AI 授权状态（用于决定是否显示 AI 配置入口）
   const [aiAuthorized, setAIAuthorized] = useState(false);
+  const [profileToast, setProfileToast] = useState("");
+  const showToast = (msg: string) => { setProfileToast(msg); setTimeout(() => setProfileToast(""), 2500); };
 
   useEffect(() => {
     authApi.babies().then(setBabies).catch(() => setBabies([]));
@@ -46,12 +48,20 @@ export default function ProfilePage() {
       setBabies((prev) => [...prev, created]);
       setShowAdd(false);
       setBabyForm({ ...babyForm, name: "" });
+      showToast("宝宝档案已添加");
+    } else {
+      showToast("添加失败，请稍后重试");
     }
   };
 
   const setPrimary = async (id: number) => {
-    await authApi.setPrimaryBaby(id).catch(() => {});
-    setBabies((prev) => prev.map((b) => ({ ...b, is_primary: b.id === id })));
+    try {
+      await authApi.setPrimaryBaby(id);
+      setBabies((prev) => prev.map((b) => ({ ...b, is_primary: b.id === id })));
+      showToast("已设为默认宝宝");
+    } catch {
+      showToast("设置失败");
+    }
   };
 
   const handleLogout = () => {
@@ -171,6 +181,24 @@ export default function ProfilePage() {
           <div className="text-left">
             <p className="font-medium text-gray-700">健康中心</p>
             <p className="text-xs text-gray-400">产检/疫苗</p>
+          </div>
+        </button>
+        <button className="card flex items-center gap-3 hover:shadow-md transition" onClick={() => navigate("/notifications")}>
+          <div className="rounded-xl bg-brand-50 p-2.5">
+            <Bell className="h-5 w-5 text-brand-500" />
+          </div>
+          <div className="text-left">
+            <p className="font-medium text-gray-700">通知中心</p>
+            <p className="text-xs text-gray-400">消息提醒</p>
+          </div>
+        </button>
+        <button className="card flex items-center gap-3 hover:shadow-md transition" onClick={() => navigate("/favorites")}>
+          <div className="rounded-xl bg-brand-50 p-2.5">
+            <HeartOff className="h-5 w-5 text-brand-500" />
+          </div>
+          <div className="text-left">
+            <p className="font-medium text-gray-700">我的收藏</p>
+            <p className="text-xs text-gray-400">商品/内容/清单</p>
           </div>
         </button>
       </section>
@@ -361,6 +389,12 @@ export default function ProfilePage() {
       <p className="text-center text-xs text-gray-300">
         萌芽 · 生命最初 3000 天陪伴
       </p>
+
+      {profileToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl bg-gray-800 px-4 py-2 text-sm text-white shadow-lg">
+          {profileToast}
+        </div>
+      )}
     </div>
   );
 }

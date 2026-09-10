@@ -40,7 +40,11 @@ export const kidsEncyclopediaApi = {
 
 export const productApi = {
   list: (params?: Record<string, string | number | undefined> & { page?: number; page_size?: number }) =>
-    api.get<ApiResponse<Product[]>>("/products/", { params }).then((r) => r.data.data),
+    api.get<ApiResponse<{ items: Product[]; total: number; page: number; page_size: number; total_pages: number }>>("/products/", { params }).then((r) => r.data.data),
+
+  // 不分页列表（用于下拉选择等场景）
+  listAll: (params?: Record<string, string | number | undefined>) =>
+    api.get<ApiResponse<Product[]>>("/products/", { params: { ...params, no_page: 1 } }).then((r) => r.data.data),
 
   detail: (id: number) => api.get<ApiResponse<Product>>(`/products/${id}/`).then((r) => r.data.data),
 
@@ -51,7 +55,7 @@ export const productApi = {
     api.patch<ApiResponse<Product>>(`/products/${id}/`, data).then((r) => r.data.data),
 
   remove: (id: number) =>
-    api.delete<ApiResponse<null>>(`/products/${id}/`).then((r) => r.data.data),
+    api.delete<ApiResponse<null>>(`/products/${id}/`).then((r) => r.data),
 
   // 导入导出（仅管理员）
   exportCsv: () => api.get<Blob>("/products/export_csv/", { responseType: "blob" }).then((r) => r.data),

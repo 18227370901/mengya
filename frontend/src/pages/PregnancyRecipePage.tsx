@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChefHat, Leaf, Search, X } from "lucide-react";
 import { recipeApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { Recipe } from "@/types";
+import CopyButton from "@/components/CopyButton";
 
 const PERIOD_TABS = [
   { key: "month_1_2", label: "孕1-2月", desc: "孕早期", short: "1-2月", weeks: "1-8周" },
@@ -44,6 +45,20 @@ export default function PregnancyRecipePage() {
   const [nutrientTags, setNutrientTags] = useState<{ nutrient_tag: string; count: number }[]>([]);
   const [showNutrientFilter, setShowNutrientFilter] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 搜索防抖 300ms
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchTerm]);
+
+  // 切换 tab 时重置展开态
+  useEffect(() => {
+    setExpandedId(null);
+  }, [activeTab]);
 
   // 根据用户孕周自动定位到对应月份组
   useEffect(() => {
@@ -70,13 +85,13 @@ export default function PregnancyRecipePage() {
       period_month: activeTab,
     };
     if (nutrientFilter) params.nutrient = nutrientFilter;
-    if (searchTerm) params.search = searchTerm;
+    if (debouncedSearch) params.search = debouncedSearch;
     recipeApi
       .list(params)
       .then(setRecipes)
       .catch(() => setRecipes([]))
       .finally(() => setLoading(false));
-  }, [activeTab, nutrientFilter, searchTerm]);
+  }, [activeTab, nutrientFilter, debouncedSearch]);
 
   const currentTabInfo = PERIOD_TABS.find((t) => t.key === activeTab);
   const filteredCount = recipes.length;
@@ -259,13 +274,19 @@ export default function PregnancyRecipePage() {
                 <div className="border-t border-gray-100 px-4 pb-4 pt-3">
                   {/* 材料 */}
                   <div className="mb-3">
-                    <h4 className="mb-1 text-xs font-bold text-gray-500">材料</h4>
+                    <div className="mb-1 flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-gray-500">材料</h4>
+                      <CopyButton text={recipe.ingredients} />
+                    </div>
                     <p className="text-sm leading-relaxed text-gray-700">{recipe.ingredients}</p>
                   </div>
 
                   {/* 做法 */}
                   <div className="mb-3">
-                    <h4 className="mb-1 text-xs font-bold text-gray-500">做法</h4>
+                    <div className="mb-1 flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-gray-500">做法</h4>
+                      <CopyButton text={recipe.steps} label="复制做法" />
+                    </div>
                     <div className="space-y-1">
                       {recipe.steps.split("\n").map((step, idx) => (
                         <p key={idx} className="text-sm leading-relaxed text-gray-700">
@@ -278,7 +299,10 @@ export default function PregnancyRecipePage() {
                   {/* 营养小叮咛 */}
                   {recipe.nutrition_tip && (
                     <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
-                      <h4 className="mb-1 text-xs font-bold text-amber-600">营养小叮咛</h4>
+                      <div className="mb-1 flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-amber-600">营养小叮咛</h4>
+                        <CopyButton text={recipe.nutrition_tip} />
+                      </div>
                       <p className="text-xs leading-relaxed text-amber-700">{recipe.nutrition_tip}</p>
                     </div>
                   )}

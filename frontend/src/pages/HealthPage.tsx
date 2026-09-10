@@ -1,16 +1,19 @@
-import { useEffect, useState } from "react";
-import { Baby, CalendarCheck, LineChart, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Baby, Calendar, CalendarCheck, LineChart, Plus, Trash2 } from "lucide-react";
+import CopyButton from "@/components/CopyButton";
 import { healthApi } from "@/api/services";
 import type { HealthRecord } from "@/types";
 import GrowthChart from "@/components/GrowthChart";
 import VaccineCalendar from "@/components/VaccineCalendar";
+import HealthCalendar from "@/components/HealthCalendar";
 
-type TabKey = "checkup" | "growth" | "vaccine";
+type TabKey = "checkup" | "growth" | "vaccine" | "calendar";
 
 const TABS: Array<{ key: TabKey; label: string; icon: typeof CalendarCheck }> = [
   { key: "checkup", label: "产检记录", icon: CalendarCheck },
   { key: "growth", label: "生长曲线", icon: LineChart },
   { key: "vaccine", label: "疫苗日历", icon: Baby },
+  { key: "calendar", label: "日历总览", icon: Calendar },
 ];
 
 export default function HealthPage() {
@@ -18,6 +21,10 @@ export default function HealthPage() {
   const [records, setRecords] = useState<HealthRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [toast, setToast] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   const [form, setForm] = useState({
     record_type: "prenatal_exam",
@@ -54,22 +61,32 @@ export default function HealthPage() {
       payload.height = form.height ? Number(form.height) : undefined;
       payload.weight = form.weight ? Number(form.weight) : undefined;
     }
-    await healthApi.create(payload).catch(() => {});
-    setShowForm(false);
-    setForm({ ...form, note: "", gestational_week: "", height: "", weight: "" });
-    // 提交后自动切换到对应类型 tab，确保用户看到刚保存的记录
-    if (form.record_type === "growth_measurement") {
-      setTab("growth");
-    } else {
-      setTab("checkup");
+    try {
+      await healthApi.create(payload);
+      showToast("保存成功");
+      setShowForm(false);
+      setForm({ ...form, note: "", gestational_week: "", height: "", weight: "" });
+      // 提交后自动切换到对应类型 tab，确保用户看到刚保存的记录
+      if (form.record_type === "growth_measurement") {
+        setTab("growth");
+      } else {
+        setTab("checkup");
+      }
+      load();
+    } catch {
+      showToast("保存失败，请重试");
     }
-    load();
   };
 
   const remove = async (id: number) => {
     if (!window.confirm("确认删除这条记录？")) return;
-    await healthApi.remove(id).catch(() => {});
-    load();
+    try {
+      await healthApi.remove(id);
+      showToast("已删除");
+      load();
+    } catch {
+      showToast("删除失败，请重试");
+    }
   };
 
   const checkupRecords = records.filter((r) => r.record_type === "prenatal_exam");
@@ -100,7 +117,7 @@ export default function HealthPage() {
           <h1 className="text-2xl font-bold text-gray-800">健康中心</h1>
           <p className="mt-1 text-sm text-gray-400">产检 · 生长曲线 · 疫苗日历</p>
         </div>
-        {tab !== "vaccine" && (
+        {tab !== "vaccine" && tab !== "calendar" && (
           <button
             className="btn-primary"
             onClick={() => {
@@ -227,9 +244,21 @@ export default function HealthPage() {
                   <span className="font-medium text-gray-700">{r.record_date}</span>
                   {r.gestational_week && <span className="tag">孕{r.gestational_week}周</span>}
                 </div>
-                {r.note && <p className="mt-1 text-sm text-gray-500">{r.note}</p>}
+                {r.note && (
+                  <>
+                    <p className="mt-1 text-sm text-gray-500">{r.note}</p>
+                    <div className="mt-1 flex justify-end">
+                      <CopyButton text={r.note} label="复制" />
+                    </div>
+                  </>
+                )}
                 {r.ai_analysis && (
-                  <p className="mt-2 rounded-lg bg-cream p-2 text-xs text-gray-500">AI 解读：{r.ai_analysis}</p>
+                  <>
+                    <p className="mt-2 rounded-lg bg-cream p-2 text-xs text-gray-500">AI 解读：{r.ai_analysis}</p>
+                    <div className="mt-1 flex justify-end">
+                      <CopyButton text={r.ai_analysis} label="复制" />
+                    </div>
+                  </>
                 )}
               </div>
               <button className="text-gray-300 hover:text-red-500" onClick={() => remove(r.id)}>
@@ -246,8 +275,27 @@ export default function HealthPage() {
             <p className="py-6 text-center text-sm text-gray-400">暂无生长数据，点击右上角新增</p>
           )}
         </section>
+      ) : tab === "calendar" ? (
+        <HealthCalendar
+          records={records}
+          currentMonth={calendarMonth}
+          onMonthChange={setCalendarMonth}
+          onDayClick={(_date, dayRecords) => {
+            const hasGrowth = dayRecords.some((r) => r.record_type === "growth_measurement");
+            const hasCheckup = dayRecords.some((r) => r.record_type === "prenatal_exam");
+            if (hasGrowth) setTab("growth");
+            else if (hasCheckup) setTab("checkup");
+            else setTab("vaccine");
+          }}
+        />
       ) : (
         <VaccineCalendar records={records} onChanged={load} />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl bg-gray-800 px-4 py-2 text-sm text-white shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   );

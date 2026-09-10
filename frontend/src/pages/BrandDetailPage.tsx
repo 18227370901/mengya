@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Building2, Calendar, Globe, MapPin, Star } from "lucide-react";
+import CopyButton from "@/components/CopyButton";
 import { brandApi, productApi } from "@/api/catalog";
 import type { BrandProfile, Product } from "@/types";
 import ProductCard from "@/components/ProductCard";
@@ -22,7 +23,7 @@ export default function BrandDetailPage() {
         setBrandError((e as Error).message || "加载失败");
         return null;
       }),
-      productApi.list({ brand: Number(id) }).catch(() => [] as Product[]),
+      productApi.listAll({ brand: Number(id) }).catch(() => [] as Product[]),
     ])
       .then(([b, p]) => {
         setProducts(p);
@@ -116,11 +117,21 @@ export default function BrandDetailPage() {
       <section className="card">
         <h2 className="mb-2 font-semibold text-gray-800">品牌定位</h2>
         <p className="text-sm text-gray-500">{brand.positioning}</p>
-        {brand.positioning_desc && <p className="mt-2 text-sm leading-relaxed text-gray-600">{brand.positioning_desc}</p>}
+        {brand.positioning_desc && (
+          <>
+            <p className="mt-2 text-sm leading-relaxed text-gray-600">{brand.positioning_desc}</p>
+            <div className="mt-1 flex justify-end">
+              <CopyButton text={brand.positioning_desc} label="复制" />
+            </div>
+          </>
+        )}
         {brand.brand_story && (
           <>
             <h2 className="mb-2 mt-5 font-semibold text-gray-800">品牌故事</h2>
             <p className="text-sm leading-relaxed text-gray-600">{brand.brand_story}</p>
+            <div className="mt-1 flex justify-end">
+              <CopyButton text={brand.brand_story} label="复制" />
+            </div>
           </>
         )}
       </section>

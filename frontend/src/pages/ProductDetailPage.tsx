@@ -1,18 +1,52 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, ShieldCheck, Star } from "lucide-react";
+import CopyButton from "@/components/CopyButton";
 import { productApi } from "@/api/catalog";
 import type { Product } from "@/types";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
   const [product, setProduct] = useState<Product | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "error" | "notfound" | "ok">("loading");
 
   useEffect(() => {
-    if (id) productApi.detail(Number(id)).then(setProduct).catch(() => {});
+    setLoadState("loading");
+    setProduct(null);
+    if (id) {
+      productApi.detail(Number(id))
+        .then((p) => { setProduct(p); setLoadState("ok"); })
+        .catch(() => setLoadState("error"));
+    } else {
+      setLoadState("notfound");
+    }
   }, [id]);
 
-  if (!product) return <div className="py-20 text-center text-gray-400">加载中…</div>;
+  if (loadState === "loading" || (loadState === "ok" && !product)) {
+    return <div className="py-20 text-center text-gray-400">加载中…</div>;
+  }
+
+  if (loadState === "error") {
+    return (
+      <div className="py-20 text-center space-y-4">
+        <p className="text-gray-500">加载失败，请稍后重试</p>
+        <Link to="/products" className="inline-flex items-center text-sm text-brand-500 hover:underline">
+          <ArrowLeft className="mr-1 h-4 w-4" /> 返回商品库
+        </Link>
+      </div>
+    );
+  }
+
+  if (loadState === "notfound" || !product) {
+    return (
+      <div className="py-20 text-center space-y-4">
+        <p className="text-gray-500">商品不存在或已下架</p>
+        <Link to="/products" className="inline-flex items-center text-sm text-brand-500 hover:underline">
+          <ArrowLeft className="mr-1 h-4 w-4" /> 返回商品库
+        </Link>
+      </div>
+    );
+  }
 
   const ratings = product.ratings ?? {};
   const dims = [
@@ -94,6 +128,9 @@ export default function ProductDetailPage() {
           <strong>安全风险提示：</strong>
           {product.safety_alert}
           {product.test_report_source && <span className="mt-1 block text-xs text-red-400">来源：{product.test_report_source}</span>}
+          <div className="mt-2 flex justify-end">
+            <CopyButton text={product.safety_alert} label="复制" />
+          </div>
         </div>
       )}
 
@@ -117,12 +154,18 @@ export default function ProductDetailPage() {
         <div className="card">
           <h2 className="mb-2 text-lg font-bold text-gray-800">产品描述</h2>
           <p className="whitespace-pre-wrap text-gray-600">{product.description}</p>
+          <div className="mt-2 flex justify-end">
+            <CopyButton text={product.description} label="复制" />
+          </div>
         </div>
       )}
       {product.purchase_guide && (
         <div className="card">
           <h2 className="mb-2 text-lg font-bold text-gray-800">选购指南</h2>
           <p className="whitespace-pre-wrap text-gray-600">{product.purchase_guide}</p>
+          <div className="mt-2 flex justify-end">
+            <CopyButton text={product.purchase_guide} label="复制" />
+          </div>
         </div>
       )}
     </div>

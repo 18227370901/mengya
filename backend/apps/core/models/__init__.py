@@ -8,6 +8,7 @@ from .brand import BrandProfile
 from .product import Product
 from .comparison import ProductComparison
 from .shopping import ShoppingList, ShoppingListItem
+from .baby_shopping import BabyShoppingItem
 from .health import HealthRecord
 from .ai_log import AIQueryLog
 from .chat import ChatSession, ChatMessage
@@ -28,6 +29,7 @@ __all__ = [
     "ProductComparison",
     "ShoppingList",
     "ShoppingListItem",
+    "BabyShoppingItem",
     "HealthRecord",
     "AIQueryLog",
     "ChatSession",

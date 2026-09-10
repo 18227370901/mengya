@@ -4,15 +4,15 @@
 #
 # 用法：
 #   ./run.sh                启动全部服务（同 start）
-#   ./run.sh start          启动全部服务（后端 + 前端 + 生成 nginx 配置）
+#   ./run.sh start          启动全部服务（后端 + 前端）
 #   ./run.sh stop           停止全部服务
 #   ./run.sh restart        重启全部服务
 #   ./run.sh status         查看服务运行状态
-#   ./run.sh nginx-config   仅生成 nginx 配置（不要求本机安装 nginx）
+#   ./run.sh add_nginx      生成 nginx SSL 配置（需单独手动执行）
 #   ./run.sh help           显示帮助
 #
 # 可自定义的配置项（通过环境变量传入，均有默认值）：
-#   ADMIN_PHONE       管理员手机号（默认 13800000001）
+#   ADMIN_USERNAME    管理员账号（手机号或用户名，默认 13800000001）
 #   ADMIN_PASSWORD    管理员密码（默认 admin123）
 #   ADMIN_NICKNAME    管理员昵称（默认 管理员）
 #   BACKEND_PORT      后端服务端口（默认 8000）
@@ -21,25 +21,20 @@
 #
 # 用法示例：
 #   ./run.sh start
-#   ADMIN_PHONE=13900000000 ADMIN_PASSWORD=mypassword BACKEND_PORT=9000 ./run.sh start
-#   EXTERNAL_PORT=20448 ./run.sh start
+#   ADMIN_USERNAME=admin_yy ADMIN_PASSWORD=mypassword ./run.sh start
+#   BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
+#   ./run.sh add_nginx
 # ============================================================
 
 set -e
 
 # ===== 配置项（可从环境变量覆盖）=====
-export ADMIN_PHONE="${ADMIN_PHONE:-13800000001}"
+export ADMIN_USERNAME="${ADMIN_USERNAME:-13800000001}"
 export ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 export ADMIN_NICKNAME="${ADMIN_NICKNAME:-管理员}"
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export EXTERNAL_PORT="${EXTERNAL_PORT:-10224}"
-
-# ===== 内部配置（一般无需修改）=====
-export DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY:-dev-only-change-this-in-production}"
-export DJANGO_DEBUG="${DJANGO_DEBUG:-True}"
-export DJANGO_ALLOWED_HOSTS="${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}"
-export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:-http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
@@ -53,7 +48,6 @@ LOG_DIR="$SCRIPT_DIR/logs"
 
 # ===== 工具函数 =====
 
-# 端口是否被监听（0=是，1=否）
 port_in_use() {
     local port="$1"
     if command -v ss >/dev/null 2>&1; then
@@ -65,7 +59,6 @@ port_in_use() {
     return 1
 }
 
-# PID 是否存活且匹配关键字
 pid_alive() {
     local pid="$1"
     local keyword="$2"
@@ -79,7 +72,6 @@ pid_alive() {
     return 0
 }
 
-# 读取 PID 文件并校验存活；无则输出空
 read_pid() {
     local pidfile="$1"
     local keyword="$2"
@@ -96,12 +88,6 @@ read_pid() {
 
 get_backend_pid() { read_pid "$BACKEND_PID_FILE" "manage.py runserver"; }
 get_frontend_pid() { read_pid "$FRONTEND_PID_FILE" "vite"; }
-
-echo_banner() {
-    echo "============================================"
-    echo "  萌芽（mengya）平台"
-    echo "============================================"
-}
 
 # ===== 生成 nginx 配置 =====
 gen_nginx_config() {
@@ -211,7 +197,7 @@ start_backend() {
     "$PYTHON" manage.py ensure_admin 2>/dev/null || true
 
     mkdir -p "$LOG_DIR" "$PID_DIR"
-    nohup "$PYTHON" manage.py runserver 0.0.0.0:$BACKEND_PORT \
+    nohup "$PYTHON" manage.py runserver 127.0.0.1:$BACKEND_PORT \
         >> "$LOG_DIR/backend.log" 2>&1 &
     echo $! > "$BACKEND_PID_FILE"
     echo "  后端 PID: $(cat "$BACKEND_PID_FILE")"
@@ -234,7 +220,7 @@ start_frontend() {
     fi
 
     mkdir -p "$LOG_DIR" "$PID_DIR"
-    nohup npm run dev -- --host 0.0.0.0 --port $FRONTEND_PORT \
+    nohup npm run dev -- --port $FRONTEND_PORT \
         >> "$LOG_DIR/frontend.log" 2>&1 &
     echo $! > "$FRONTEND_PID_FILE"
     echo "  前端 PID: $(cat "$FRONTEND_PID_FILE")"
@@ -270,7 +256,9 @@ stop_all() {
 
 # ===== 状态查询 =====
 show_status() {
-    echo_banner
+    echo "============================================"
+    echo "  萌芽（mengya）平台"
+    echo "============================================"
     local bp fp
     bp=$(get_backend_pid)
     fp=$(get_frontend_pid)
@@ -298,15 +286,13 @@ show_status() {
 CMD="${1:-start}"
 case "$CMD" in
     start|"")
-        gen_nginx_config
         start_backend
         start_frontend
         show_status
         echo "============================================"
         echo "  启动完成！"
         echo "  内部访问: http://localhost:$BACKEND_PORT (后端) / http://localhost:$FRONTEND_PORT (前端)"
-        echo "  外部访问: https://localhost:$EXTERNAL_PORT (需服务器安装 nginx)"
-        echo "  管理员账号: $ADMIN_PHONE / $ADMIN_PASSWORD"
+        echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
         echo "============================================"
         ;;
     stop)
@@ -317,21 +303,19 @@ case "$CMD" in
         echo ""
         echo "==> 重新启动..."
         sleep 1
-        gen_nginx_config
         start_backend
         start_frontend
         show_status
         echo "============================================"
         echo "  重启完成！"
         echo "  内部访问: http://localhost:$BACKEND_PORT / http://localhost:$FRONTEND_PORT"
-        echo "  外部访问: https://localhost:$EXTERNAL_PORT (需服务器安装 nginx)"
-        echo "  管理员账号: $ADMIN_PHONE / $ADMIN_PASSWORD"
+        echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
         echo "============================================"
         ;;
     status)
         show_status
         ;;
-    nginx-config)
+    add_nginx)
         gen_nginx_config
         ;;
     -h|--help|help)
@@ -339,7 +323,7 @@ case "$CMD" in
         ;;
     *)
         echo "未知命令: $CMD"
-        echo "用法: ./run.sh [start|stop|restart|status|nginx-config|help]"
+        echo "用法: ./run.sh [start|stop|restart|status|add_nginx|help]"
         exit 1
         ;;
 esac

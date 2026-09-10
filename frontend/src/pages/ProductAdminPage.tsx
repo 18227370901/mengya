@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Edit3, Plus, Save, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Edit3, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { productApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
@@ -50,6 +50,8 @@ const EMPTY_FORM: ProductForm = {
   is_active: true,
 };
 
+const PAGE_SIZE = 10;
+
 export default function ProductAdminPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -64,14 +66,25 @@ export default function ProductAdminPage() {
   const [toast, setToast] = useState("");
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // 分页状态
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
-  const load = () => {
+  const load = (p?: number) => {
     setLoading(true);
-    const params: Record<string, string | undefined> = {};
+    const targetPage = p ?? page;
+    const params: Record<string, string | number | undefined> = { page: targetPage, page_size: PAGE_SIZE };
     if (filterCategory) params.category = filterCategory;
-    productApi.list(params).then(setProducts).catch(() => setProducts([])).finally(() => setLoading(false));
+    productApi.list(params).then((data) => {
+      setProducts(data.items);
+      setTotal(data.total);
+      setTotalPages(data.total_pages);
+    }).catch(() => setProducts([])).finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -79,8 +92,15 @@ export default function ProductAdminPage() {
       navigate("/profile");
       return;
     }
-    load();
+    load(1);
   }, [filterCategory]);
+
+  // 编辑/发布后自动滚动到表单
+  useEffect(() => {
+    if (showForm && formRef.current) {
+      formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [showForm]);
 
   const startEdit = (p: Product) => {
     setEditingId(p.id);
@@ -131,7 +151,7 @@ export default function ProductAdminPage() {
       setShowForm(false);
       load();
     } catch {
-      /* ignore */
+      showToast("保存失败，请重试");
     } finally {
       setSaving(false);
     }
@@ -193,6 +213,12 @@ export default function ProductAdminPage() {
     }
   };
 
+  const goToPage = (p: number) => {
+    const target = Math.max(1, Math.min(p, totalPages));
+    setPage(target);
+    load(target);
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       {/* 顶部 */}
@@ -248,7 +274,7 @@ export default function ProductAdminPage() {
           <select
             className="input flex-1"
             value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
+            onChange={(e) => { setFilterCategory(e.target.value); setPage(1); }}
           >
             <option value="">全部分类</option>
             {CATEGORIES.map((c) => (
@@ -272,7 +298,7 @@ export default function ProductAdminPage() {
 
       {/* 表单 */}
       {showForm && (
-        <section className="card space-y-3">
+        <section ref={formRef} className="card space-y-3 scroll-mt-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">{editingId ? "编辑商品" : "发布新商品"}</h2>
             <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
@@ -395,6 +421,52 @@ export default function ProductAdminPage() {
             ))}
           {!loading && products.length === 0 && (
             <p className="py-10 text-center text-gray-400">暂无商品</p>
+          )}
+
+          {/* 分页控件 */}
+          {total > 0 && (
+            <div className="flex items-center justify-between pt-4">
+              <p className="text-xs text-gray-400">
+                共 {total} 条，第 {page}/{totalPages} 页
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-30"
+                  onClick={() => goToPage(page - 1)}
+                  disabled={page <= 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  let p: number;
+                  if (totalPages <= 7) {
+                    p = i + 1;
+                  } else if (page <= 4) {
+                    p = i + 1;
+                  } else if (page >= totalPages - 3) {
+                    p = totalPages - 6 + i;
+                  } else {
+                    p = page - 3 + i;
+                  }
+                  return (
+                    <button
+                      key={p}
+                      className={`rounded-lg px-3 py-1 text-sm ${p === page ? "bg-brand-500 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                      onClick={() => goToPage(p)}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                <button
+                  className="rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-30"
+                  onClick={() => goToPage(page + 1)}
+                  disabled={page >= totalPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

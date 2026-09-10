@@ -123,10 +123,20 @@ export interface TimelineItem {
 export interface ShoppingListItem {
   id: number;
   product?: Product;
+  provider_item?: number;
   custom_name?: string;
-  quantity: number;
+  owner?: string;
+  owner_label?: string;
+  category?: string;
+  quantity: string | number;
   quantity_prepared?: number;
   unit?: string;
+  unit_price?: string | null;
+  total_price?: string | null;
+  image_url?: string | null;
+  extra_image_url?: string | null;
+  purchase_status?: string;
+  purchase_status_label?: string;
   is_checked: boolean;
   note?: string;
   sort_order?: number;
@@ -147,6 +157,61 @@ export interface ShoppingList {
   note?: string;
   items: ShoppingListItem[];
   created_at?: string;
+}
+
+export interface BabyShoppingItem {
+  id: number;
+  owner: "mom" | "baby";
+  owner_label: string;
+  category: string;
+  name: string;
+  quantity: string;
+  unit: string;
+  unit_price: string | null;
+  total_price: string | null;
+  remark: string;
+  image_url: string | null;
+  extra_image_url: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface BabyShoppingListResponse {
+  items: BabyShoppingItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  stats: {
+    mom_count: number;
+    baby_count: number;
+    total_price_mom: string;
+    total_price_baby: string;
+    total_price_all: string;
+  };
+}
+
+export interface BabyShoppingCategories {
+  mom: string[];
+  baby: string[];
+}
+
+export interface AIRecommendResult {
+  summary?: string;
+  categories?: Array<{
+    category: string;
+    owner: string;
+    items: Array<{
+      name: string;
+      quantity: string;
+      unit: string;
+      remark: string;
+      estimated_price: string;
+    }>;
+  }>;
+  tips?: string;
+  raw_content?: string;
 }
 
 export interface HealthRecord {

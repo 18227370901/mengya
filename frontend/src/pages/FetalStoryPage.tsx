@@ -9,9 +9,11 @@ import {
   BookMarked,
   Eye,
   List,
+  X,
 } from "lucide-react";
 import { fetalStoryApi } from "@/api/catalog";
 import type { FetalStory } from "@/types";
+import CopyButton from "@/components/CopyButton";
 
 const NARRATOR_META: Record<string, { label: string; color: string; icon: typeof Heart }> = {
   mom: { label: "妈妈讲", color: "bg-pink-100 text-pink-600", icon: Heart },
@@ -347,6 +349,15 @@ function StoryDetail({
   const title = showEnglish && story.title_en ? story.title_en : story.title;
   const subtitle = showEnglish && story.subtitle_en ? story.subtitle_en : story.subtitle;
 
+  // Esc 关闭弹窗
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -410,12 +421,18 @@ function StoryDetail({
               </p>
             ))}
           </div>
+          <div className="mt-2 flex justify-end">
+            <CopyButton text={content} label="复制正文" />
+          </div>
 
           {tips && (
             <div className="mt-4 rounded-xl bg-amber-50 p-4">
-              <div className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-amber-600">
-                <BookMarked className="h-4 w-4" />
-                {showEnglish ? "Tips" : "胎教提示"}
+              <div className="mb-1.5 flex items-center justify-between text-sm font-medium text-amber-600">
+                <div className="flex items-center gap-1.5">
+                  <BookMarked className="h-4 w-4" />
+                  {showEnglish ? "Tips" : "胎教提示"}
+                </div>
+                <CopyButton text={tips} />
               </div>
               <p className="text-sm leading-relaxed text-amber-700">{tips}</p>
             </div>

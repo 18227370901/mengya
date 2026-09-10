@@ -14,6 +14,7 @@ import {
 import { timelineApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { TimelineItem } from "@/types";
+import CopyButton from "@/components/CopyButton";
 
 const TOTAL_WEEKS = 40;
 
@@ -234,11 +235,17 @@ export default function PregnancyWeeklyPage() {
                       <p className="mt-0.5 text-xs text-gray-400">{item.subtitle}</p>
                     )}
                     <p className="mt-2 text-sm leading-relaxed text-gray-600">{item.content}</p>
+                    <div className="mt-1 flex justify-end">
+                      <CopyButton text={item.content} label="复制" />
+                    </div>
                     {item.tips && (
                       <div className="mt-3 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
                         <p className="text-xs text-amber-700">
                           <span className="font-medium">小贴士：</span>{item.tips}
                         </p>
+                        <div className="mt-1 flex justify-end">
+                          <CopyButton text={item.tips} label="复制" />
+                        </div>
                       </div>
                     )}
                     <Link

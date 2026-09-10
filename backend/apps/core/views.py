@@ -20,6 +20,7 @@ from .models import (
     AIQueryLog,
     AuditLog,
     BabyProfile,
+    BabyShoppingItem,
     BrandProfile,
     ChatMessage,
     ChatSession,
@@ -39,6 +40,7 @@ from .models import (
 )
 from .serializers import (
     BabyProfileSerializer,
+    BabyShoppingItemSerializer,
     BrandProfileSerializer,
     FetalStorySerializer,
     FavoriteSerializer,
@@ -47,6 +49,7 @@ from .serializers import (
     ProductSerializer,
     RecipeSerializer,
     KidsEncyclopediaSerializer,
+    ShoppingListItemSerializer,
     ShoppingListSerializer,
     TimelineSerializer,
     UserSerializer,
@@ -1002,6 +1005,36 @@ class ProductViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), IsAdminUser()]
         return super().get_permissions()
 
+    def list(self, request, *args, **kwargs):
+        """重写 list，支持分页；传 no_page=1 时返回全量"""
+        qs = self.filter_queryset(self.get_queryset())
+
+        if request.query_params.get("no_page"):
+            serializer = self.get_serializer(qs, many=True)
+            return Response({"code": 0, "message": "success", "data": serializer.data})
+
+        total = qs.count()
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 10))
+        page = max(1, page)
+        page_size = max(1, min(page_size, 100))
+        start = (page - 1) * page_size
+        end = start + page_size
+        items = qs[start:end]
+        serializer = self.get_serializer(items, many=True)
+
+        return Response({
+            "code": 0,
+            "message": "success",
+            "data": {
+                "items": serializer.data,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total + page_size - 1) // page_size if total > 0 else 1,
+            },
+        })
+
     def retrieve(self, request, *args, **kwargs):
         """详情页：普通用户访问暂存商品返回 404"""
         product = self.get_object()
@@ -1214,6 +1247,422 @@ class ShoppingListViewSet(viewsets.ModelViewSet):
         item.save()
         item.shopping_list.update_progress()
         return Response({"code": 0, "message": "已更新", "data": None})
+
+    @action(detail=False, methods=["post"])
+    def from_template(self, request):
+        """将参考模板（Excel导入数据）引用为我的清单"""
+        name = request.data.get("name", "我的待产包")
+        owner = request.data.get("owner", "")  # 可选: mom/baby，限制归属
+        categories = request.data.get("categories", [])  # 可选: 分类列表，限制分类
+        item_ids = request.data.get("item_ids", [])  # 可选: 具体物品ID列表
+        season = request.data.get("season", "all")
+        delivery_method = request.data.get("delivery_method", "both")
+        list_type = request.data.get("list_type", "hospital_bag")
+
+        # 构建查询
+        qs = BabyShoppingItem.objects.filter(is_active=True)
+        if owner:
+            qs = qs.filter(owner=owner)
+        if categories:
+            qs = qs.filter(category__in=categories)
+        if item_ids:
+            qs = qs.filter(id__in=item_ids)
+        if not qs.exists():
+            return Response(
+                {"code": 1, "message": "未选择任何物品，请先勾选要引用的模板物品"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        shopping_list = ShoppingList.objects.create(
+            user=request.user,
+            name=name,
+            list_type=list_type,
+            season=season,
+            delivery_method=delivery_method,
+            note="来自参考模板引用",
+        )
+        for idx, tpl in enumerate(qs.order_by("owner", "sort_order", "id")):
+            ShoppingListItem.objects.create(
+                shopping_list=shopping_list,
+                provider_item=tpl,
+                custom_name=tpl.name,
+                owner=tpl.owner,
+                category=tpl.category,
+                quantity=tpl.quantity,
+                unit=tpl.unit,
+                unit_price=tpl.unit_price,
+                total_price=tpl.total_price,
+                image_url=tpl.image_url,
+                extra_image_url=tpl.extra_image_url,
+                note=tpl.remark,
+                sort_order=idx,
+            )
+        shopping_list.update_progress()
+        return Response(
+            {"code": 0, "message": "引用成功，已在“我的清单”中创建", "data": ShoppingListSerializer(shopping_list).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=["post"])
+    def adopt_ai(self, request):
+        """将 AI 推荐结果采纳为我的清单"""
+        name = request.data.get("name", "AI推荐待产包")
+        season = request.data.get("season", "all")
+        delivery_method = request.data.get("delivery_method", "both")
+        categories = request.data.get("categories", [])  # [{category, owner, items:[{name,quantity,unit,remark,estimated_price}]}]
+
+        if not categories:
+            return Response(
+                {"code": 1, "message": "没有可采纳的 AI 推荐内容"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        shopping_list = ShoppingList.objects.create(
+            user=request.user,
+            name=name,
+            list_type="hospital_bag",
+            season=season,
+            delivery_method=delivery_method,
+            note="由 AI 推荐生成",
+        )
+        sort_idx = 0
+        for cat in categories:
+            owner = cat.get("owner", "mom")
+            category = cat.get("category", "其他")
+            for item in cat.get("items", []):
+                ShoppingListItem.objects.create(
+                    shopping_list=shopping_list,
+                    custom_name=item.get("name", "未命名"),
+                    owner=owner,
+                    category=category,
+                    quantity=str(item.get("quantity", 1)),
+                    unit=item.get("unit", "件"),
+                    note=item.get("remark", ""),
+                    sort_order=sort_idx,
+                )
+                sort_idx += 1
+        shopping_list.update_progress()
+        return Response(
+            {"code": 0, "message": "已采纳 AI 推荐，生成我的清单", "data": ShoppingListSerializer(shopping_list).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def update_item(self, request, pk=None):
+        """更新清单中某个物品的字段（数量/单价/总价/购买状态/备注等）"""
+        shopping_list = get_object_or_404(ShoppingList, pk=pk, user=request.user)
+        item_id = request.data.get("item_id")
+        item = get_object_or_404(ShoppingListItem, pk=item_id, shopping_list=shopping_list)
+        # 允许更新的字段
+        for field in ["custom_name", "quantity", "unit", "unit_price", "total_price", "purchase_status", "note", "category", "owner", "image_url"]:
+            if field in request.data:
+                setattr(item, field, request.data[field])
+        item.save()
+        return Response({"code": 0, "message": "已更新", "data": ShoppingListItemSerializer(item).data})
+
+
+# ============ 待产包参考数据（妈妈篇/宝宝篇） ============
+
+class BabyShoppingItemViewSet(viewsets.ModelViewSet):
+    """待产包参考物品 — 所有用户可读，仅管理员可写"""
+    serializer_class = BabyShoppingItemSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = BabyShoppingItem.objects.filter(is_active=True).order_by("owner", "sort_order", "id")
+        # 筛选参数
+        owner = self.request.query_params.get("owner")
+        if owner:
+            qs = qs.filter(owner=owner)
+        category = self.request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
+        keyword = self.request.query_params.get("keyword")
+        if keyword:
+            qs = qs.filter(models.Q(name__icontains=keyword) | models.Q(remark__icontains=keyword))
+        return qs
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAdminUser()]
+        return [IsAuthenticated()]
+
+    def list(self, request, *args, **kwargs):
+        """重写 list，返回分页 + 统计信息"""
+        qs = self.filter_queryset(self.get_queryset())
+        total = qs.count()
+        mom_count = qs.filter(owner="mom").count()
+        baby_count = qs.filter(owner="baby").count()
+        total_price_mom = sum(
+            item.total_price or 0 for item in qs.filter(owner="mom")
+        )
+        total_price_baby = sum(
+            item.total_price or 0 for item in qs.filter(owner="baby")
+        )
+
+        # 分页
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 10))
+        start = (page - 1) * page_size
+        end = start + page_size
+        items = qs[start:end]
+        serializer = self.get_serializer(items, many=True)
+
+        return Response({
+            "code": 0,
+            "message": "success",
+            "data": {
+                "items": serializer.data,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": (total + page_size - 1) // page_size,
+                "stats": {
+                    "mom_count": mom_count,
+                    "baby_count": baby_count,
+                    "total_price_mom": str(total_price_mom),
+                    "total_price_baby": str(total_price_baby),
+                    "total_price_all": str(total_price_mom + total_price_baby),
+                },
+            },
+        })
+
+    @action(detail=False, methods=["get"])
+    def categories(self, request):
+        """获取所有分类列表（按 owner 分组）"""
+        qs = BabyShoppingItem.objects.filter(is_active=True)
+        result = {}
+        for owner_key, owner_label in BabyShoppingItem.OWNER_CHOICES:
+            cats = qs.filter(owner=owner_key).values_list("category", flat=True).distinct().order_by("category")
+            result[owner_key] = list(cats)
+        return Response({"code": 0, "message": "success", "data": result})
+
+    def _parse_ai_markdown(self, content):
+        """AI 返回 Markdown 表格时，回退解析为结构化 categories 数据。
+        支持形如：
+          ### 一、妈妈衣物类（或 "妈妈衣物类"）
+          | 物品名称 | 数量 | 单位 | 备注 | 预估价格 |
+          |---|---|---|---|
+          | 哺乳内衣 | 3-4 | 件 | ... | 80-150元 |
+        返回 None 表示无法解析。
+        """
+        import json as json_lib
+        lines = [l.strip() for l in (content or "").splitlines() if l.strip()]
+        if not lines:
+            return None
+
+        summary_lines = []
+        categories = []
+        current_cat = None
+        current_owner = "mom"
+        header_map = {}
+        seen_table = False
+        header_used = False
+        header_map_cur = {}
+
+        for line in lines:
+            # 跳过代码块围栏
+            if line.startswith("```"):
+                continue
+            # 标题行 → 新分类
+            if line.startswith("#") or re.match(r"^(一|二|三|四|五|六|七|八|九|十|十一|十二|十三|十四|十五)['、.．]", line):
+                title = re.sub(r"^#+\s*", "", line).strip()
+                title = re.sub(r"^(一|二|三|四|五|六|七|八|九|十|十一|十二|十三|十四|十五)['、.．]\s*", "", title)
+                # 非物品分类的章节（总体建议/额外建议/注意事项等）不建立分类
+                if any(k in title for k in ("总体", "额外", "注意", "小贴士", "提示", "补充", "说明")):
+                    continue
+                if "妈妈" in title or "产妇" in title or "成人" in title:
+                    current_owner = "mom"
+                elif "宝宝" in title or "婴儿" in title or "新生儿" in title or "幼儿" in title:
+                    current_owner = "baby"
+                else:
+                    current_owner = "mom"
+                if current_cat:
+                    categories.append(current_cat)
+                current_cat = {"category": title or "其他", "owner": current_owner, "items": []}
+                header_used = False
+                continue
+
+            # 表头行：| 物品 | 数量 | 单位 | ... |
+            if line.startswith("|") and not re.match(r"^\|[\s\-:|]+\|$", line):
+                cells = [c.strip() for c in line.strip("|").split("|")]
+                # 判断是否为表头：包含"物品/名称/数量/单位"等关键词
+                if any(k in "".join(cells) for k in ("物品", "名称", "数量", "单位", "价格", "备注", "建议")):
+                    header_map = {}
+                    for i, cell in enumerate(cells):
+                        lc = cell.lower()
+                        if "物品" in lc or "名称" in lc or "商品" in lc:
+                            header_map["name"] = i
+                        elif "数量" in lc:
+                            header_map["quantity"] = i
+                        elif "单位" in lc:
+                            header_map["unit"] = i
+                        elif "价格" in lc or "费用" in lc or "预算" in lc:
+                            header_map["price"] = i
+                        elif "备注" in lc or "注意" in lc or "建议" in lc or "说明" in lc:
+                            header_map["remark"] = i
+                    if header_map:
+                        header_used = True
+                        header_map_cur = header_map
+                    continue
+
+                # 数据行
+                if not header_used or not header_map_cur:
+                    continue
+                row = {}
+                for key, idx in header_map_cur.items():
+                    if idx < len(cells):
+                        row[key] = cells[idx]
+                name = row.get("name", "")
+                if not name or name in ("物品名称", "名称", "-"):
+                    continue
+                if not current_cat:
+                    current_cat = {"category": "其他", "owner": current_owner, "items": []}
+                item = {
+                    "name": name,
+                    "quantity": row.get("quantity", "1"),
+                    "unit": row.get("unit", "件"),
+                    "remark": row.get("remark", ""),
+                    "estimated_price": row.get("price", ""),
+                }
+                current_cat["items"].append(item)
+                seen_table = True
+                continue
+
+            # 非表格普通文本
+            if current_cat:
+                # 分类名后到行分类前的说明行：加入 remark 或忽略
+                continue
+            if not seen_table:
+                # 表格出现前的普通行：当作 summary/提示
+                summary_lines.append(line)
+
+        if current_cat:
+            categories.append(current_cat)
+
+        # 汇总最后的 summary
+        if not categories and not seen_table:
+            return None
+
+        summary = " ".join(summary_lines)[:300] or ""
+        tips_text = " ".join([l for l in lines if l.startswith(("提示", "建议", "小贴士", "额外"))])[:200] or ""
+
+        return {
+            "summary": summary,
+            "categories": categories,
+            "tips": tips_text,
+            "raw_content": content,
+        }
+
+    @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated])
+    def ai_recommend(self, request):
+        """AI 联网分析推荐待产包"""
+        import urllib.request
+        import json as json_lib
+
+        season = request.data.get("season", "")
+        delivery = request.data.get("delivery_method", "")
+        budget = request.data.get("budget", "")
+        extra = request.data.get("extra", "")
+
+        user = request.user
+        api_key = user.ai_api_key or ""
+        base_url = user.ai_base_url or ""
+        ai_model = user.ai_model or ""
+
+        if not api_key:
+            # 尝试全局设置
+            setting = SystemSetting.get_settings()
+            api_key = setting.get("default_ai_api_key", "")
+            base_url = setting.get("default_ai_base_url", "")
+            ai_model = setting.get("default_ai_model", "")
+
+        if not api_key:
+            return Response(
+                {"code": 1, "message": "尚未配置 AI API Key，请联系管理员在设置页配置"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        season_map = {"spring": "春季", "summer": "夏季", "autumn": "秋季", "winter": "冬季"}
+        delivery_map = {"vaginal": "顺产", "cesarean": "剖腹产", "both": "通用"}
+
+        prompt = f"""你是一位专业母婴顾问，请根据以下信息，联网搜索最新数据，为用户推荐一份待产包清单。
+
+用户信息：
+- 季节：{season_map.get(season, season)}
+- 分娩方式：{delivery_map.get(delivery, delivery)}
+- 预算：{budget or '不限'}
+- 其他需求：{extra or '无'}
+
+请严格按以下 JSON 格式返回（只输出 JSON，不要包含 markdown 代码块标记、不要加任何解释文字）：
+{{
+  "summary": "总体建议（2-3句话）",
+  "categories": [
+    {{
+      "category": "类别名称（如：妈妈衣物类、宝宝护理类）",
+      "owner": "mom 或 baby",
+      "items": [
+        {{
+          "name": "物品名称",
+          "quantity": "建议数量（数字或范围，如 3-4）",
+          "unit": "单位（如 件/套/包）",
+          "remark": "购买建议/注意事项",
+          "estimated_price": "预估价格（如 50-100元/件）"
+        }}
+      ]
+    }}
+  ],
+  "tips": "额外建议（1-2句话）"
+}}"""
+
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            }
+            payload = json_lib.dumps({
+                "model": ai_model,
+                "messages": [
+                    {"role": "system", "content": "你是一位专业母婴顾问，请根据用户需求联网搜索最新数据，给出专业、实用的待产包建议。回复必须是纯 JSON 格式。"},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.7,
+            }).encode("utf-8")
+
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                result = json_lib.loads(resp.read().decode("utf-8"))
+
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            # 尝试解析 JSON
+            content_stripped = content.strip()
+            if content_stripped.startswith("```"):
+                content_stripped = content_stripped.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+            parsed = None
+            try:
+                parsed = json_lib.loads(content_stripped)
+                if not isinstance(parsed, dict):
+                    parsed = None
+            except (json_lib.JSONDecodeError, ValueError):
+                parsed = None
+
+            # JSON 解析失败 → 尝试从 Markdown 表格中提取结构化数据
+            if parsed is None:
+                parsed = self._parse_ai_markdown(content)
+
+            if parsed is None:
+                parsed = {"raw_content": content}
+
+            return Response({"code": 0, "message": "success", "data": parsed})
+
+        except Exception as e:
+            return Response(
+                {"code": 1, "message": f"AI 分析失败：{str(e)}", "data": None},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 # ============ 对比 ============

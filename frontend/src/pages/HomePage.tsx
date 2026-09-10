@@ -47,7 +47,7 @@ export default function HomePage() {
       : undefined;
     Promise.all([
       timelineApi.list({ essential: true }).catch(() => [] as TimelineItem[]),
-      productApi.list({ sort: "rating" }).catch(() => [] as Product[]),
+      productApi.listAll({ sort: "rating" }).catch(() => [] as Product[]),
       ...(weekStage ? [timelineApi.list({ stage: weekStage }).catch(() => [] as TimelineItem[])] : []),
     ])
       .then(([e, r, w]) => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ClipboardList, Eye, EyeOff, KeyRound, Settings, ShieldCheck, ShieldQuestion, Snowflake, Trash2, UserCog, Users } from "lucide-react";
+import { ArrowLeft, ClipboardList, Eye, EyeOff, KeyRound, Search, Settings, ShieldCheck, ShieldQuestion, Snowflake, Trash2, UserCog, Users } from "lucide-react";
 import { authApi, type UserManageItem, type UserManageData } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 
@@ -38,6 +38,7 @@ export default function UserManagePage() {
   const [secForm, setSecForm] = useState({ question: "", answer: "" });
   const [toast, setToast] = useState("");
   const [filterRole, setFilterRole] = useState("");
+  const [searchKeyword, setSearchKeyword] = useState("");
   const [showSecConfig, setShowSecConfig] = useState(false);
   const [secConfigForm, setSecConfigForm] = useState({ login_captcha_threshold: 3, login_freeze_threshold: 10, login_lock_minutes: 5 });
   const [secConfigSaving, setSecConfigSaving] = useState(false);
@@ -161,6 +162,15 @@ export default function UserManagePage() {
               <option key={r.key} value={r.key}>{r.label}</option>
             ))}
           </select>
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
+            <input
+              className="w-full rounded-xl border border-gray-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-300"
+              placeholder="搜索昵称或手机号…"
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+            />
+          </div>
           <button
             className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-brand-50 px-3 py-1.5 text-xs text-brand-500 hover:bg-brand-100"
             onClick={() => navigate("/admin/audit-logs")}
@@ -241,12 +251,21 @@ export default function UserManagePage() {
       {/* 用户列表 */}
       {loading ? (
         <p className="py-8 text-center text-sm text-gray-400">加载中…</p>
-      ) : users.filter((u) => !filterRole || (filterRole === "admin" ? u.is_staff : u.role === filterRole)).length === 0 ? (
+      ) : users.filter((u) => !filterRole || (filterRole === "admin" ? u.is_staff : u.role === filterRole)).filter((u) => {
+        if (!searchKeyword.trim()) return true;
+        const kw = searchKeyword.trim().toLowerCase();
+        return (u.nickname || "").toLowerCase().includes(kw) || (u.phone || "").includes(kw);
+      }).length === 0 ? (
         <p className="py-8 text-center text-sm text-gray-400">暂无用户</p>
       ) : (
         <div className="space-y-3">
           {users
             .filter((u) => !filterRole || (filterRole === "admin" ? u.is_staff : u.role === filterRole))
+            .filter((u) => {
+              if (!searchKeyword.trim()) return true;
+              const kw = searchKeyword.trim().toLowerCase();
+              return (u.nickname || "").toLowerCase().includes(kw) || (u.phone || "").includes(kw);
+            })
             .map((u) => (
             <div key={u.id} className="card">
               {/* 用户基本信息 */}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Download, Edit3, Plus, Trash2, Upload, X } from "lucide-react";
 import { timelineApi } from "@/api/catalog";
@@ -157,6 +157,16 @@ export default function TimelinePage() {
     setEditForm(EMPTY_FORM);
     setEditing(true);
   };
+
+  // Esc 关闭编辑弹窗
+  useEffect(() => {
+    if (!editing) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditing(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [editing]);
 
   const openEdit = (item: TimelineItem) => {
     setEditForm({
@@ -330,8 +340,8 @@ export default function TimelinePage() {
 
       {/* 编辑弹窗 */}
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditing(false)}>
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-800">{editForm.id ? "编辑事件" : "新增事件"}</h2>
               <button className="rounded-lg p-1 text-gray-400 hover:bg-gray-100" onClick={() => setEditing(false)}>

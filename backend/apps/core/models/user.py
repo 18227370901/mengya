@@ -12,7 +12,7 @@ ROLE_CHOICES = [
 class User(AbstractUser):
     """平台用户（手机号登录）"""
 
-    phone = models.CharField(max_length=11, unique=True, verbose_name="手机号")
+    phone = models.CharField(max_length=50, unique=True, verbose_name="手机号/用户名")
     avatar = models.URLField(blank=True, null=True, verbose_name="头像")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="mother", verbose_name="角色")
     due_date = models.DateField(null=True, blank=True, verbose_name="预产期")

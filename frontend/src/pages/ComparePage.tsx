@@ -58,7 +58,7 @@ export default function ComparePage() {
   const [filterAge, setFilterAge] = useState("");
 
   useEffect(() => {
-    productApi.list({ sort: "rating" }).then(setAllProducts).catch(() => {});
+    productApi.listAll({ sort: "rating" }).then(setAllProducts).catch(() => {});
   }, []);
 
   // 筛选后的商品列表

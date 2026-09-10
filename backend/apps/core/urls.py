@@ -11,6 +11,7 @@ router.register(r"kids-encyclopedia", views.KidsEncyclopediaViewSet, basename="k
 router.register(r"products", views.ProductViewSet, basename="product")
 router.register(r"brands", views.BrandViewSet, basename="brand")
 router.register(r"shopping-lists", views.ShoppingListViewSet, basename="shopping-list")
+router.register(r"baby-shopping", views.BabyShoppingItemViewSet, basename="baby-shopping")
 router.register(r"health/records", views.HealthRecordViewSet, basename="health-record")
 router.register(r"notifications", views.NotificationViewSet, basename="notification")
 router.register(r"favorites", views.FavoriteViewSet, basename="favorite")

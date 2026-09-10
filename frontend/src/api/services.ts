@@ -1,5 +1,5 @@
 import api from "./client";
-import type { ApiResponse, ChatSessionDetail, ChatSessionSummary, HealthRecord, ShoppingList, AIChatResult } from "@/types";
+import type { ApiResponse, ChatSessionDetail, ChatSessionSummary, HealthRecord, ShoppingList, ShoppingListItem, AIChatResult, BabyShoppingListResponse, BabyShoppingCategories, AIRecommendResult } from "@/types";
 
 export const shoppingApi = {
   list: () => api.get<ApiResponse<ShoppingList[]>>("/shopping-lists/").then((r) => r.data.data),
@@ -15,6 +15,26 @@ export const shoppingApi = {
     api.post<ApiResponse<null>>(`/shopping-lists/${listId}/toggle_check/`, { item_id: itemId }).then((r) => r.data.data),
 
   remove: (id: number) => api.delete<ApiResponse<null>>(`/shopping-lists/${id}/`).then((r) => r.data.data),
+
+  fromTemplate: (data: { name?: string; owner?: string; categories?: string[]; item_ids?: number[]; season?: string; delivery_method?: string }) =>
+    api.post<ApiResponse<ShoppingList>>("/shopping-lists/from_template/", data).then((r) => r.data.data),
+
+  adoptAI: (data: { name?: string; season: string; delivery_method: string; categories: Array<{ category: string; owner: string; items: Array<{ name: string; quantity: string; unit: string; remark: string; estimated_price?: string }> }> }) =>
+    api.post<ApiResponse<ShoppingList>>("/shopping-lists/adopt_ai/", data).then((r) => r.data.data),
+
+  updateItem: (listId: number, itemId: number, data: Partial<ShoppingListItem>) =>
+    api.post<ApiResponse<ShoppingListItem>>(`/shopping-lists/${listId}/update_item/`, { item_id: itemId, ...data }).then((r) => r.data.data),
+};
+
+export const babyShoppingApi = {
+  list: (params: { owner?: string; category?: string; keyword?: string; page?: number; page_size?: number }) =>
+    api.get<ApiResponse<BabyShoppingListResponse>>("/baby-shopping/", { params }).then((r) => r.data.data),
+
+  categories: () =>
+    api.get<ApiResponse<BabyShoppingCategories>>("/baby-shopping/categories/").then((r) => r.data.data),
+
+  aiRecommend: (data: { season: string; delivery_method: string; budget?: string; extra?: string }) =>
+    api.post<ApiResponse<AIRecommendResult>>("/baby-shopping/ai_recommend/", data, { timeout: 90000 }).then((r) => r.data.data),
 };
 
 export const healthApi = {

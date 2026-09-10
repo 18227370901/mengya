@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronDown, Lightbulb, MessageCircle, Search, Sparkles, X } from "lucide-react";
+import CopyButton from "@/components/CopyButton";
 import { kidsEncyclopediaApi } from "@/api/catalog";
 import type { KidsEncyclopedia } from "@/types";
 
@@ -24,18 +25,32 @@ export default function KidsEncyclopediaPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 搜索防抖 300ms
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchTerm]);
+
+  // 切换章节时重置展开态
+  useEffect(() => {
+    setExpandedId(null);
+  }, [activeChapter]);
 
   useEffect(() => {
     setLoading(true);
     const params: { chapter?: string; search?: string } = {};
     if (activeChapter) params.chapter = activeChapter;
-    if (searchTerm) params.search = searchTerm;
+    if (debouncedSearch) params.search = debouncedSearch;
     kidsEncyclopediaApi
       .list(params)
       .then(setQuestions)
       .catch(() => setQuestions([]))
       .finally(() => setLoading(false));
-  }, [activeChapter, searchTerm]);
+  }, [activeChapter, debouncedSearch]);
 
   const groupedQuestions = useMemo(() => {
     if (!activeChapter) {
@@ -191,9 +206,12 @@ export default function KidsEncyclopediaPage() {
 
                         {/* 解答区 */}
                         <div className="mb-3 rounded-xl bg-brand-50 p-3">
-                          <div className="mb-1.5 flex items-center gap-1.5">
-                            <Lightbulb className="h-4 w-4 text-brand-500" />
-                            <span className="text-xs font-medium text-brand-600">原来是这样</span>
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <Lightbulb className="h-4 w-4 text-brand-500" />
+                              <span className="text-xs font-medium text-brand-600">原来是这样</span>
+                            </div>
+                            <CopyButton text={q.answer} />
                           </div>
                           <p className="text-sm leading-relaxed text-gray-700">{q.answer}</p>
                         </div>
@@ -201,9 +219,12 @@ export default function KidsEncyclopediaPage() {
                         {/* 漫画对话区 */}
                         {q.comic_dialogue && (
                           <div className="rounded-xl bg-yellow-50 p-3">
-                            <div className="mb-1.5 flex items-center gap-1.5">
-                              <MessageCircle className="h-4 w-4 text-yellow-600" />
-                              <span className="text-xs font-medium text-yellow-700">趣味对话</span>
+                            <div className="mb-1.5 flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <MessageCircle className="h-4 w-4 text-yellow-600" />
+                                <span className="text-xs font-medium text-yellow-700">趣味对话</span>
+                              </div>
+                              <CopyButton text={q.comic_dialogue} />
                             </div>
                             <div className="space-y-1">
                               {q.comic_dialogue.split("\n").filter((l) => l.trim()).map((line, idx) => (

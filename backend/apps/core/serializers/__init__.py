@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from ..models import (
     BabyProfile,
+    BabyShoppingItem,
     BrandProfile,
     FetalStory,
     HealthRecord,
@@ -52,10 +53,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ["phone", "password", "nickname", "role", "due_date", "baby_birthday", "is_pregnant"]
 
     def validate_phone(self, value):
-        if not value.isdigit() or len(value) != 11:
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("账号不能为空")
+        if len(value) > 50:
+            raise serializers.ValidationError("账号长度不能超过50个字符")
+        # 纯数字按手机号校验（11位）
+        if value.isdigit() and len(value) != 11:
             raise serializers.ValidationError("手机号格式不正确")
         if User.objects.filter(phone=value).exists():
-            raise serializers.ValidationError("该手机号已注册")
+            raise serializers.ValidationError("该账号已注册")
         return value
 
     def create(self, validated_data):
@@ -236,20 +243,35 @@ class KidsEncyclopediaSerializer(serializers.ModelSerializer):
 
 class ShoppingListItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
+    purchase_status_label = serializers.CharField(source="get_purchase_status_display", read_only=True)
+    owner_label = serializers.SerializerMethodField()
 
     class Meta:
         model = ShoppingListItem
         fields = [
             "id",
             "product",
+            "provider_item",
             "custom_name",
+            "owner",
+            "owner_label",
+            "category",
             "quantity",
             "quantity_prepared",
             "unit",
+            "unit_price",
+            "total_price",
+            "image_url",
+            "extra_image_url",
+            "purchase_status",
+            "purchase_status_label",
             "is_checked",
             "note",
             "sort_order",
         ]
+
+    def get_owner_label(self, obj):
+        return "妈妈" if obj.owner == "mom" else "宝宝" if obj.owner == "baby" else ""
 
 
 class ShoppingListSerializer(serializers.ModelSerializer):
@@ -318,6 +340,31 @@ class FavoriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserFavorite
         fields = ["id", "favorite_type", "object_id", "note", "created_at"]
+
+
+class BabyShoppingItemSerializer(serializers.ModelSerializer):
+    owner_label = serializers.CharField(source="get_owner_display", read_only=True)
+
+    class Meta:
+        model = BabyShoppingItem
+        fields = [
+            "id",
+            "owner",
+            "owner_label",
+            "category",
+            "name",
+            "quantity",
+            "unit",
+            "unit_price",
+            "total_price",
+            "remark",
+            "image_url",
+            "extra_image_url",
+            "sort_order",
+            "is_active",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
 
 
 class FetalStorySerializer(serializers.ModelSerializer):

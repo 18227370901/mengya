@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { productApi } from "@/api/catalog";
 import type { Product } from "@/types";
 import ProductCard from "@/components/ProductCard";
@@ -33,16 +33,27 @@ export default function ProductListPage() {
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState("");
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 搜索防抖 300ms
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setDebouncedQ(q), 300);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [q]);
 
   useEffect(() => {
     setLoading(true);
+    setError("");
     productApi
-      .list({ category: category || undefined, sort: sort || undefined, q: q || undefined })
-      .then(setProducts)
-      .catch(() => setProducts([]))
+      .list({ category: category || undefined, sort: sort || undefined, q: debouncedQ || undefined, page: 1, page_size: 50 })
+      .then((data) => setProducts(data.items))
+      .catch(() => { setProducts([]); setError("加载失败，请稍后重试"); })
       .finally(() => setLoading(false));
-  }, [category, sort, q]);
+  }, [category, sort, debouncedQ]);
 
   return (
     <div className="space-y-5">
@@ -81,6 +92,10 @@ export default function ProductListPage() {
         </div>
       </div>
 
+      {error && (
+        <p className="py-6 text-center text-sm text-red-500">{error}</p>
+      )}
+
       {loading ? (
         <p className="py-10 text-center text-gray-400">加载中…</p>
       ) : (
@@ -88,7 +103,7 @@ export default function ProductListPage() {
           {products.map((p) => (
             <ProductCard key={p.id} product={p} />
           ))}
-          {!loading && products.length === 0 && (
+          {!loading && products.length === 0 && !error && (
             <p className="col-span-full py-10 text-center text-gray-400">暂无商品</p>
           )}
         </div>

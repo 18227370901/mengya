@@ -15,6 +15,7 @@ import {
 import { aiApi } from "@/api/services";
 import { useChatStore } from "@/store/chatStore";
 import type { ChatSessionSummary } from "@/types";
+import CopyButton from "@/components/CopyButton";
 
 interface ChatData {
   response: string;
@@ -56,7 +57,13 @@ export default function AIAssistantPage() {
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" }>({ msg: "", type: "success" });
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: "", type: "success" }), 2500);
+  };
 
   // 首次加载：拉取会话列表
   useEffect(() => {
@@ -146,8 +153,9 @@ export default function AIAssistantPage() {
     try {
       const result = await aiApi.sessionRename(renamingId, renameValue.trim());
       upsertSession({ ...sessions.find((s) => s.id === renamingId)!, title: result.title });
+      showToast("重命名成功");
     } catch {
-      // 静默失败
+      showToast("重命名失败，请稍后重试", "error");
     }
     setRenamingId(null);
     setRenameValue("");
@@ -162,8 +170,9 @@ export default function AIAssistantPage() {
       if (confirmDeleteId === activeSessionId) {
         clearMessages();
       }
+      showToast("会话已删除");
     } catch {
-      // 静默失败
+      showToast("删除失败，请稍后重试", "error");
     }
     setConfirmDeleteId(null);
   };
@@ -317,6 +326,11 @@ export default function AIAssistantPage() {
               >
                 {m.content}
               </div>
+              {m.role === "ai" && (
+                <div className="flex items-center gap-1 pl-1 pt-0.5">
+                  <CopyButton text={m.content} />
+                </div>
+              )}
               {m.role === "user" && (
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-100 text-orange-500">
                   <User className="h-4 w-4" />
@@ -384,6 +398,15 @@ export default function AIAssistantPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast 提示 */}
+      {toast.msg && (
+        <div className={`fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg ${
+          toast.type === "error" ? "bg-red-500" : "bg-gray-800"
+        }`}>
+          {toast.msg}
         </div>
       )}
     </div>

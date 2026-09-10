@@ -12,6 +12,7 @@ import ComparePage from "./pages/ComparePage";
 import ShoppingListPage from "./pages/ShoppingListPage";
 import ShoppingListDetailPage from "./pages/ShoppingListDetailPage";
 import GenerateShoppingListPage from "./pages/GenerateShoppingListPage";
+import BabyShoppingDetailPage from "./pages/BabyShoppingDetailPage";
 import HealthPage from "./pages/HealthPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -26,6 +27,8 @@ import PregnancyWeeklyPage from "./pages/PregnancyWeeklyPage";
 import PregnancyRecipePage from "./pages/PregnancyRecipePage";
 import KidsEncyclopediaPage from "./pages/KidsEncyclopediaPage";
 import FetalStoryPage from "./pages/FetalStoryPage";
+import NotificationPage from "./pages/NotificationPage";
+import FavoritePage from "./pages/FavoritePage";
 import NotFoundPage from "./pages/NotFoundPage";
 
 export default function App() {
@@ -51,6 +54,7 @@ export default function App() {
         <Route path="/compare" element={<ComparePage />} />
         <Route path="/shopping-list" element={<ShoppingListPage />} />
         <Route path="/shopping-list/generate" element={<GenerateShoppingListPage />} />
+        <Route path="/shopping-list/ref/:id" element={<BabyShoppingDetailPage />} />
         <Route path="/shopping-list/:id" element={<ShoppingListDetailPage />} />
         <Route path="/health" element={<HealthPage />} />
         <Route path="/ai-assistant" element={<AIAssistantPage />} />
@@ -63,6 +67,8 @@ export default function App() {
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
         <Route path="/fetal-stories" element={<FetalStoryPage />} />
+        <Route path="/notifications" element={<NotificationPage />} />
+        <Route path="/favorites" element={<FavoritePage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

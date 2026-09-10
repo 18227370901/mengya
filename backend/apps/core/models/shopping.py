@@ -65,6 +65,12 @@ class ShoppingList(models.Model):
 class ShoppingListItem(models.Model):
     """清单明细项"""
 
+    PURCHASE_STATUS = [
+        ("not_bought", "未购买"),
+        ("bought", "已购买"),
+        ("considering", "考虑中"),
+    ]
+
     shopping_list = models.ForeignKey(ShoppingList, on_delete=models.CASCADE, related_name="items", verbose_name="清单")
     product = models.ForeignKey(
         "Product",
@@ -75,9 +81,25 @@ class ShoppingListItem(models.Model):
         verbose_name="关联商品",
     )
     custom_name = models.CharField(max_length=200, blank=True, verbose_name="自定义名称")
-    quantity = models.IntegerField(default=1, verbose_name="建议数量")
+    # 新增：来源模板引用（Excel 导入的参考物品）
+    provider_item = models.ForeignKey(
+        "BabyShoppingItem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="user_items",
+        verbose_name="来源参考物品",
+    )
+    owner = models.CharField(max_length=10, blank=True, default="", verbose_name="物品归属（mom/baby）")
+    category = models.CharField(max_length=50, blank=True, default="", verbose_name="类别")
+    quantity = models.CharField(max_length=50, default="1", verbose_name="建议数量")
     quantity_prepared = models.IntegerField(default=0, verbose_name="已准备数量")
     unit = models.CharField(max_length=20, default="件", blank=True, verbose_name="单位")
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="单价")
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="总价")
+    image_url = models.URLField(blank=True, null=True, verbose_name="示例图片")
+    extra_image_url = models.URLField(blank=True, null=True, verbose_name="额外示例图片")
+    purchase_status = models.CharField(max_length=20, choices=PURCHASE_STATUS, default="not_bought", verbose_name="购买情况")
     is_checked = models.BooleanField(default=False, verbose_name="是否已完成")
     note = models.TextField(blank=True, verbose_name="备注（如尺码/颜色建议）")
     sort_order = models.IntegerField(default=0, verbose_name="排序")

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Edit3 } from "lucide-react";
+import CopyButton from "@/components/CopyButton";
 import { timelineApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { TimelineItem } from "@/types";
@@ -82,10 +83,16 @@ export default function TimelineDetailPage() {
         <h1 className="text-2xl font-bold text-gray-800">{item.title}</h1>
         {item.subtitle && <p className="mt-1 text-brand-400">{item.subtitle}</p>}
         <div className="mt-4 whitespace-pre-wrap leading-relaxed text-gray-600">{item.content}</div>
+        <div className="mt-2 flex justify-end">
+          <CopyButton text={item.content} label="复制内容" />
+        </div>
         {item.tips && (
           <div className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
             <strong>小贴士：</strong>
             {item.tips}
+            <div className="mt-2 flex justify-end">
+              <CopyButton text={item.tips} label="复制" />
+            </div>
           </div>
         )}
       </article>
