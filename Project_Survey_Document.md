@@ -3,16 +3,16 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '6c7c86eb-6079-4077-9201-4c585394c623'
-  PropagateID: '6c7c86eb-6079-4077-9201-4c585394c623'
-  ReservedCode1: '57a32ab7-5cd2-425e-8f84-b021d46f6943'
-  ReservedCode2: '57a32ab7-5cd2-425e-8f84-b021d46f6943'
+  ProduceID: '4ef2e0b7-90ff-4991-be8e-834b2190bd17'
+  PropagateID: '4ef2e0b7-90ff-4991-be8e-834b2190bd17'
+  ReservedCode1: '3e12095e-d976-4623-aafa-a43ad9eef04d'
+  ReservedCode2: '3e12095e-d976-4623-aafa-a43ad9eef04d'
 ---
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.0
-> 调研日期：2026-09-08
+> 文档版本：v1.1
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
 > 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/系统设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
@@ -80,21 +80,21 @@ mengya/
 ├── backend/                    # Django 后端
 │   ├── config/                 # 项目配置（settings/urls/celery/asgi/wsgi）
 │   ├── apps/core/              # 核心业务 app（唯一业务 app）
-│   │   ├── models/             # 17 个模型文件（按域拆分）
-│   │   ├── views.py            # 1883 行，全部视图与 API
+│   │   ├── models/             # 19 个模型文件（按域拆分，含新增 baby_shopping/favorite/notification/fetal_story）
+│   │   ├── views.py            # 2300+ 行，全部视图与 API（含商品分页、通知/收藏、宝宝购物等）
 │   │   ├── serializers/        # 序列化器
 │   │   ├── services/           # 业务服务层（AI/商品对比/待产包/搜索）
 │   │   ├── utils/              # 限流/阶段工具/审计/统一响应/异常
 │   │   ├── management/commands/init_data.py  # 种子数据
-│   │   └── migrations/         # 14 个迁移
+│   │   └── migrations/         # 18 个迁移
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/                   # React 前端
 │   ├── src/
 │   │   ├── api/                # axios 封装（client/auth/catalog/compare/services）
 │   │   ├── store/              # Zustand 状态（authStore/chatStore）
-│   │   ├── pages/              # 27 个页面
-│   │   ├── components/         # 组件（雷达图/生长曲线/疫苗日历等）
+│   │   ├── pages/              # 29 个页面
+│   │   ├── components/         # 组件（雷达图/生长曲线/疫苗日历/健康日历/复制按钮）
 │   │   ├── layouts/            # MainLayout（含移动端底部导航）
 │   │   └── types/              # TS 类型定义
 │   ├── Dockerfile
@@ -103,7 +103,8 @@ mengya/
 ├── docker-compose.yml          # 5 服务编排
 ├── .env.example                # 环境变量样例
 ├── agent.md                    # AI 助手模块开发指南（847 行）
-└── README.md                   # 437 行
+├── Project_Survey_Document.md  # 本文档（调研/设计基线）
+└── README.md                   # 项目说明（437 行）
 ```
 
 ### 2.2 技术栈清单
@@ -301,7 +302,7 @@ nginx (:80)
 | 商品 | `active（上架） ⇄ inactive（暂存）`（is_active 字段） |
 | 登录风控 | `normal → need_captcha → locked → (等待) → normal` |
 | 待产包/购物清单 | 无状态机（仅 item 列表） |
-| 通知 | 无状态（仅 Notification 记录，未实现已读） |
+| 通知 | `unread（未读） → read（已读）`（Notification.is_read 字段，支持单条标记/全部已读，2026-09-10 已实现） |
 
 ### 4.5 逻辑缺陷 / 待改进点
 
@@ -310,7 +311,8 @@ nginx (:80)
 | LOGIC-01 | 图形验证码 debug_code 明文返回给前端 | 风控形同虚设（可被脚本绕过） |
 | LOGIC-02 | 无交易闭环：商品库与支付/订单无衔接 | 无法变现 |
 | LOGIC-03 | 时间轴事件「关联商品」关系为空（0 条） | 商品导购链路未打通 |
-| LOGIC-04 | 通知模块表存在但无写入逻辑（0 条） | 疫苗/产检提醒未实现 |
+| LOGIC-04 | ~~通知模块表存在但无写入逻辑（0 条）~~ **已解决（2026-09-10）**：新增通知中心页面，支持全部/未读筛选、单条标记已读、全部已读；疫苗/产检提醒写入逻辑可基于现有 Notification 模型扩展 | 疫苗/产检提醒待接入 |
+| LOGIC-07 | ~~商品列表无分页，数据量增长后前端渲染压力大~~ **已解决（2026-09-10）**：ProductViewSet 新增分页 list 方法（page/page_size/no_page），前端商品管理页 10 条/页 | 性能 |
 | LOGIC-05 | AI 会话无会话级限流（仅登录限流） | 滥用风险 |
 | LOGIC-06 | 商品价格字段为 JSON 快照（avg/taobao/jd/pdd），无实时同步 | 价格可能过期 |
 
@@ -460,18 +462,18 @@ SystemSetting (单行 id=1: register_mode / login_threshold / login_lock_thresho
 
 React 18 + TypeScript + Vite + Tailwind CSS 3 + Zustand + ECharts（雷达图/生长曲线）+ axios + react-router-dom + lucide-react。
 
-### 9.2 页面清单（27 页）
+### 9.2 页面清单（29 页）
 
 | 分类 | 页面 |
 |---|---|
 | 认证 | Login、Register |
 | 首页 | Home |
-| 知识 | Timeline、TimelineDetail、PregnancyWeekly、PregnancyRecipe、KidsEncyclopedia |
+| 知识 | Timeline、TimelineDetail、PregnancyWeekly、PregnancyRecipe、KidsEncyclopedia、FetalStory |
 | 商品 | ProductList、ProductDetail、Compare、BrandList、BrandDetail |
-| 购物 | ShoppingList、ShoppingListDetail、GenerateShoppingList |
-| 健康 | Health |
+| 购物 | ShoppingList、ShoppingListDetail、GenerateShoppingList、BabyShoppingDetail |
+| 健康 | Health（含日历总览 Tab） |
 | AI | AIAssistant、AIConfig |
-| 个人 | Profile、NotFound |
+| 个人 | Profile、Notification（通知中心）、Favorite（收藏夹）、NotFound |
 | 管理 | ProductAdmin、UserManage、AuditLog、RegistrationManage |
 
 ### 9.3 状态管理
@@ -622,14 +624,20 @@ React 18 + TypeScript + Vite + Tailwind CSS 3 + Zustand + ECharts（雷达图/�
 | 文件 | 说明 |
 |---|---|
 | `backend/config/settings.py` | 项目配置（JWT/DB/Redis/AI） |
-| `backend/apps/core/models/` | 17 个模型定义 |
-| `backend/apps/core/views.py` | 全部 API 视图（1883 行） |
+| `backend/apps/core/models/` | 19 个模型定义（含 baby_shopping/favorite/notification/fetal_story） |
+| `backend/apps/core/views.py` | 全部 API 视图（2300+ 行，含商品分页/通知/收藏） |
 | `backend/apps/core/services/ai_service.py` | AI 多配置轮询与本地兜底 |
 | `backend/apps/core/utils/rate_limit.py` | 内存限流实现 |
 | `backend/apps/core/management/commands/init_data.py` | 种子数据（品牌/商品/时间轴/演示用户） |
+| `backend/apps/core/management/commands/import_baby_shopping.py` | 宝宝购物清单导入命令（新增） |
 | `frontend/src/api/client.ts` | axios 封装（JWT/超时/解包） |
 | `frontend/src/store/authStore.ts` | 登录态持久化 |
 | `frontend/src/store/chatStore.ts` | 聊天持久化 |
+| `frontend/src/pages/NotificationPage.tsx` | 通知中心页面（新增） |
+| `frontend/src/pages/FavoritePage.tsx` | 收藏夹页面（新增） |
+| `frontend/src/components/HealthCalendar.tsx` | 健康记录日历组件（新增） |
+| `frontend/src/components/CopyButton.tsx` | 复制按钮组件（新增） |
+| `frontend/src/pages/BabyShoppingDetailPage.tsx` | 宝宝购物清单详情页（新增） |
 | `docker-compose.yml` | 5 服务编排 |
 | `nginx/nginx.conf` | 反向代理 |
 
@@ -639,6 +647,60 @@ React 18 + TypeScript + Vite + Tailwind CSS 3 + Zustand + ECharts（雷达图/�
 - 索引：覆盖常用查询，但 JSON price_info 排序无索引支持。
 - 认证风控：验证码明文返回（R-03）；登录限流为内存实现（单进程）。
 - AI：多配置轮询与本地兜底完善（容错强）；但 Key 明文存储（R-01）。
+
+---
+
+## 附 C：2026-09-10 全站优化与新增模块（v1.1 增量记录）
+
+> 本节记录自 v1.0 调研以来完成的全站优化与新增功能，作为架构基线增量。
+
+### C.1 商品管理分页与交互优化
+
+- **后端**：`ProductViewSet` 新增自定义 `list` 方法，支持 `page` / `page_size` / `no_page` 参数。
+  - 传 `no_page=1` 返回全量（兼容品牌详情/对比/首页等场景）；
+  - 分页响应格式：`{ items: [], total, page, page_size, total_pages }`。
+- **前端**：`catalog.ts` 中 `productApi.list` 适配分页响应，新增 `listAll` 获取全量；BrandDetailPage / ComparePage / HomePage 改用 `listAll`。
+- **商品管理页**：分页控件（10 条/页）、页码按钮、点击编辑自动滚动到表单（`scrollIntoView`）。
+- **商品列表页**：适配分页格式 + 搜索防抖 + 错误状态。
+
+### C.2 全站体验优化（P0 / P1 / P2）
+
+| 级别 | 优化项 | 涉及页面 |
+|---|---|---|
+| P0 | 商品详情页增加加载中/错误/未找到三态，API 失败不再永久卡「加载中」 | ProductDetailPage |
+| P0 | 购物清单翻页自动滚动到顶部 | ShoppingListPage |
+| P0 | 健康记录提交/删除失败 toast 提示 | HealthPage |
+| P1 | 孕期食谱/幼儿百科/待产包清单搜索防抖 300ms | PregnancyRecipePage、KidsEncyclopediaPage、ShoppingListPage |
+| P1 | AI 助手会话删除/重命名失败 toast 反馈 | AIAssistantPage |
+| P1 | 展开态跨 tab/筛选切换时重置 | PregnancyRecipePage、KidsEncyclopediaPage |
+| P2 | 个人中心操作（添加宝宝/设主宝宝）toast 反馈 | ProfilePage |
+| P2 | 弹窗支持 Esc 关闭 + 遮罩点击关闭 | TimelinePage、FetalStoryPage |
+| P2 | 用户管理新增按昵称/手机号搜索 | UserManagePage |
+
+### C.3 新增功能模块
+
+| 模块 | 文件 | 说明 |
+|---|---|---|
+| 通知中心 | `frontend/src/pages/NotificationPage.tsx` | 全部/未读筛选、单条标记已读、全部已读 |
+| 收藏夹 | `frontend/src/pages/FavoritePage.tsx` | 类型筛选、取消收藏、跳转详情 |
+| 健康日历 | `frontend/src/components/HealthCalendar.tsx` | 月历展示产检/生长/疫苗记录，颜色标签区分 |
+| 宝宝购物清单 | `frontend/src/pages/BabyShoppingDetailPage.tsx` + `models/baby_shopping.py` + `import_baby_shopping.py` | 宝宝购物清单详情与数据导入 |
+| 复制按钮 | `frontend/src/components/CopyButton.tsx` | 通用复制交互组件 |
+
+### C.4 路由与入口
+
+- `App.tsx` 注册 `/notifications`（通知中心）与 `/favorites`（收藏夹）路由。
+- `ProfilePage` 常用入口区新增「通知中心」「我的收藏」按钮。
+- `HealthPage` 新增「日历总览」Tab，集成 HealthCalendar。
+
+### C.5 数据模型变更
+
+| 变更 | 说明 |
+|---|---|
+| 新增 `BabyShoppingItem` | 宝宝购物清单项（migration 0016） |
+| `ShoppingItem` 扩展字段 | migration 0017 |
+| `User.phone` 最大长度调整 | migration 0018 |
+| `Notification` / `UserFavorite` | 已有模型，前端页面已接入（通知已读/收藏管理） |
 
 ---
 

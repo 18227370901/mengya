@@ -3,17 +3,17 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '24b800ad-9a21-4c31-9f4d-9dad89102300'
-  PropagateID: '24b800ad-9a21-4c31-9f4d-9dad89102300'
-  ReservedCode1: '1b145d4c-8a8a-487d-8873-f95fac18c6d5'
-  ReservedCode2: '1b145d4c-8a8a-487d-8873-f95fac18c6d5'
+  ProduceID: 'c67d2d83-3528-4352-9594-042d21b3126b'
+  PropagateID: 'c67d2d83-3528-4352-9594-042d21b3126b'
+  ReservedCode1: '073c1c6a-d7f5-4784-b9d1-677ac5a0f08b'
+  ReservedCode2: '073c1c6a-d7f5-4784-b9d1-677ac5a0f08b'
 ---
 
 # 萌芽（MengYa）· 母婴全周期陪伴平台
 
 > 从第一次胎动到第一次背书包，陪伴生命最初 3000 天。
 
-萌芽是面向备孕 / 孕期 / 0-6 岁育儿家庭的**母婴全周期一站式平台**，涵盖全周期知识时间轴、14 大类母婴商品库、五维评分对比、智能待产包、健康记录与疫苗日历、AI 问答助手（支持联网搜索）等核心能力。
+萌芽是面向备孕 / 孕期 / 0-6 岁育儿家庭的**母婴全周期一站式平台**，涵盖全周期知识时间轴、14 大类母婴商品库、五维评分对比、智能待产包、宝宝购物清单、健康记录与疫苗日历、站内通知、收藏夹、AI 问答助手（支持联网搜索）等核心能力。
 
 ## 技术栈
 
@@ -89,8 +89,12 @@ docker compose logs -f backend
 - **商品库**：14 大类、真实品牌与价格区间、安全认证标注、五维评分（安全/舒适/功能/易用/外观）
 - **产品对比**：2-4 款商品五维雷达图 + 全渠道价格对比 + AI 购买建议
 - **智能待产包**：按季节 × 分娩方式一键生成，含证件清单，支持逐项勾选进度追踪
-- **健康中心**：产检记录、宝宝生长曲线（体重/身高/头围）、疫苗日历（21 种免疫规划疫苗）
+- **宝宝购物清单**：按年龄段/场景生成宝宝用品清单，支持数据导入（BabyShoppingDetail）
+- **健康中心**：产检记录、宝宝生长曲线（体重/身高/头围）、疫苗日历（21 种免疫规划疫苗）+ 日历总览
 - **品牌档案**：41 个主流母婴品牌定位、故事、官网直达
+- **通知中心**：站内通知（全部/未读筛选、单条标记已读、全部已读）
+- **收藏夹**：商品/时间轴/待产包/对比结果统一收藏管理
+- **胎教故事**：按孕周分阶段的胎教故事内容（中英双语）
 
 ### AI 助手
 
@@ -349,12 +353,16 @@ mengya/
 │   ├── config/                    # Django 配置（settings / urls / celery）
 │   ├── requirements.txt
 │   └── apps/core/
-│       ├── models/                # 15 张数据表
+│       ├── models/                # 19 张数据表
 │       │   ├── user.py             # 用户（含 AI 配置、风控字段、密保）
 │       │   ├── system.py           # 系统设置（风控阈值、注册模式、审计保留）
 │       │   ├── audit.py            # 审计日志
 │       │   ├── ai_log.py           # AI 查询日志
 │       │   ├── baby.py / timeline.py / brand.py / product.py ...
+│       │   ├── baby_shopping.py    # 宝宝购物清单（新增）
+│       │   ├── favorite.py         # 收藏
+│       │   ├── notification.py     # 站内通知
+│       │   └── fetal_story.py      # 胎教故事
 │       ├── services/
 │       │   ├── ai_service.py       # AI 调用（多配置轮询 + 管理员共享 + 日期注入）
 │       │   ├── web_search.py       # DuckDuckGo 联网搜索
@@ -369,7 +377,7 @@ mengya/
 │       └── management/commands/init_data.py  # 初始数据
 └── frontend/
     └── src/
-        ├── pages/                  # 22 个页面
+        ├── pages/                  # 29 个页面
         │   ├── HomePage.tsx        # 首页
         │   ├── LoginPage.tsx       # 登录（含风控倒计时）
         │   ├── AIAssistantPage.tsx # AI 助手聊天
@@ -378,14 +386,17 @@ mengya/
         │   ├── AuditLogPage.tsx    # 审计日志
         │   ├── RegistrationManagePage.tsx  # 注册管理
         │   ├── ProfilePage.tsx     # 个人中心
+        │   ├── NotificationPage.tsx# 通知中心（新增）
+        │   ├── FavoritePage.tsx    # 收藏夹（新增）
+        │   ├── BabyShoppingDetailPage.tsx  # 宝宝购物清单（新增）
         │   ├── TimelinePage.tsx / ProductListPage.tsx / ComparePage.tsx ...
-        ├── components/             # 雷达图 / 生长曲线 / 疫苗日历等
+        ├── components/             # 雷达图 / 生长曲线 / 疫苗日历 / 健康日历 / 复制按钮
         ├── api/                    # axios 客户端 + 领域 API
         ├── store/                  # zustand 状态管理
         └── types/                  # 全局类型定义
 ```
 
-## 数据模型（15 张核心表）
+## 数据模型（19 张核心表）
 
 | 模型 | 说明 |
 | --- | --- |
@@ -398,9 +409,11 @@ mengya/
 | Product / BrandProfile | 商品与品牌 |
 | ProductComparison | 产品对比记录 |
 | ShoppingList / ShoppingListItem | 待产包及清单项 |
+| BabyShoppingItem | 宝宝购物清单项（新增） |
 | HealthRecord | 健康记录（产检/体重/身高/头围） |
-| UserFavorite | 商品收藏 |
-| Notification | 站内通知 |
+| UserFavorite | 收藏（商品/时间轴/待产包/对比） |
+| Notification | 站内通知（未读/已读） |
+| FetalStory | 胎教故事（按孕周分阶段） |
 | InviteLink | 邀请链接 |
 
 ## 环境变量
