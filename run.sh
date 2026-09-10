@@ -3,13 +3,21 @@
 # 萌芽（mengya）平台服务管理脚本
 #
 # 用法：
-#   ./run.sh                启动全部服务（同 start）
-#   ./run.sh start          启动全部服务（后端 + 前端）
+#   ./run.sh start          启动全部服务（交互式选择启动方式）
 #   ./run.sh stop           停止全部服务
 #   ./run.sh restart        重启全部服务
 #   ./run.sh status         查看服务运行状态
 #   ./run.sh add_nginx      生成 nginx SSL 配置（需单独手动执行）
 #   ./run.sh help           显示帮助
+#
+# 启动方式（二选一）：
+#   MODE=docker   使用 docker compose（推荐，适合服务器/容器环境）
+#   MODE=local    传统方式启动（本机 python3 + vite，适合本地开发）
+#
+# 执行 start/restart 时：
+#   - 若已设置 MODE 环境变量，则直接使用该方式
+#   - 若未设置，则交互式提示选择（并记住上次选择）
+#   - 传统方式下会自动校验依赖（python 包 / node_modules），缺失则自动安装
 #
 # 可自定义的配置项（通过环境变量传入，均有默认值）：
 #   ADMIN_USERNAME    管理员账号（手机号或用户名，默认 13800000001）
@@ -21,8 +29,13 @@
 #
 # 用法示例：
 #   ./run.sh start
-#   ADMIN_USERNAME=admin_yy ADMIN_PASSWORD=mypassword ./run.sh start
+#   MODE=docker ./run.sh start                      # docker compose 启动
+#   MODE=local ./run.sh start                       # 传统方式启动
+#   ADMIN_USERNAME=admin_yy ADMIN_PASSWORD=mypassword MODE=local ./run.sh start
 #   BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
+#   ./run.sh restart
+#   ./run.sh stop
+#   ./run.sh status
 #   ./run.sh add_nginx
 # ============================================================
 
@@ -35,16 +48,21 @@ export ADMIN_NICKNAME="${ADMIN_NICKNAME:-管理员}"
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
 export FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 export EXTERNAL_PORT="${EXTERNAL_PORT:-10224}"
+# 启动方式：不设默认值。start/restart 时若未指定则交互选择
+export MODE="${MODE:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 FRONTEND_DIR="$SCRIPT_DIR/frontend"
-NGINX_CONF="$SCRIPT_DIR/nginx/mengya_ssl.conf"
-NGINX_CERT_DIR="$SCRIPT_DIR/nginx/ssl"
+# nginx 配置与证书目录（默认 /opt/service/nginx/conf.d，可通过环境变量覆盖）
+NGINX_CONF_DIR="${NGINX_CONF_DIR:-/opt/service/nginx/conf.d}"
+NGINX_CERT_DIR="${NGINX_CERT_DIR:-/opt/service/nginx/ssl}"
+NGINX_CONF="$NGINX_CONF_DIR/mengya_ssl.conf"
 PID_DIR="$SCRIPT_DIR/.run"
 BACKEND_PID_FILE="$PID_DIR/backend.pid"
 FRONTEND_PID_FILE="$PID_DIR/frontend.pid"
 LOG_DIR="$SCRIPT_DIR/logs"
+MODE_FILE="$SCRIPT_DIR/.run_mode"
 
 # ===== 工具函数 =====
 
@@ -88,6 +106,93 @@ read_pid() {
 
 get_backend_pid() { read_pid "$BACKEND_PID_FILE" "manage.py runserver"; }
 get_frontend_pid() { read_pid "$FRONTEND_PID_FILE" "vite"; }
+
+# 探测可用的 python 命令（优先 python3，兼容 python）
+detect_python() {
+    if command -v python3 >/dev/null 2>&1; then
+        echo "python3"
+    elif command -v python >/dev/null 2>&1; then
+        echo "python"
+    else
+        echo ""
+    fi
+}
+
+# 校验 MODE 取值
+validate_mode() {
+    case "$MODE" in
+        docker|local) return 0 ;;
+        *)
+            echo "  [错误] MODE 取值无效: '$MODE'（仅支持 docker / local）"
+            echo "         示例: MODE=docker ./run.sh start  或  MODE=local ./run.sh start"
+            exit 1
+            ;;
+    esac
+}
+
+# 读取上次使用的启动方式
+get_last_mode() {
+    local m=""
+    if [ -f "$MODE_FILE" ]; then
+        m=$(cat "$MODE_FILE" 2>/dev/null | tr -d '[:space:]' || true)
+    fi
+    case "$m" in
+        docker|local) echo "$m" ;;
+        *) echo "" ;;
+    esac
+}
+
+# 选择启动方式：优先 MODE 环境变量 → 上次选择 → 交互选择
+choose_mode() {
+    if [ -n "$MODE" ]; then
+        validate_mode
+        return 0
+    fi
+
+    local last
+    last=$(get_last_mode)
+    if [ -n "$last" ]; then
+        echo ""
+        read -r -p "  检测到上次使用 [$last] 方式启动，是否继续？[Y/n]: " ans
+        case "$ans" in
+            ""|y|Y|yes|YES)
+                export MODE="$last"
+                return 0
+                ;;
+            *)
+                echo "  请重新选择启动方式。"
+                ;;
+        esac
+    fi
+
+    echo ""
+    echo "============================================"
+    echo "  请选择启动方式："
+    echo "    1) docker  - Docker Compose（推荐，适合服务器/容器部署）"
+    echo "    2) local   - 传统方式（本机 python3 + Vite，适合本地开发）"
+    echo "============================================"
+    while true; do
+        read -r -p "  请输入序号 [1/2]: " choice
+        case "$choice" in
+            1)
+                export MODE="docker"
+                return 0
+                ;;
+            2)
+                export MODE="local"
+                return 0
+                ;;
+            *)
+                echo "  无效输入，请输入 1 或 2"
+                ;;
+        esac
+    done
+}
+
+save_mode() {
+    mkdir -p "$SCRIPT_DIR"
+    echo "$MODE" > "$MODE_FILE"
+}
 
 # ===== 生成 nginx 配置 =====
 gen_nginx_config() {
@@ -155,39 +260,144 @@ EOF
     echo "  nginx 配置已生成: $NGINX_CONF"
     echo "  SSL 证书目录: $NGINX_CERT_DIR"
     echo ""
-    echo "  在已安装 nginx 的服务器上执行:"
-    echo "    nginx -c $NGINX_CONF"
+    echo "  请确认 nginx 主配置已 include 该目录（一般默认包含），例如:"
+    echo "      include $NGINX_CONF_DIR/*.conf;"
+    echo "  然后执行测试与重载:"
+    echo "    nginx -t && nginx -s reload"
     echo ""
-    echo "  或使用 Docker:"
+    echo "  或使用 Docker 直接运行该配置:"
     echo "    docker run -d -p $EXTERNAL_PORT:$EXTERNAL_PORT \\"
     echo "      -v $NGINX_CONF:/etc/nginx/conf.d/default.conf \\"
     echo "      -v $NGINX_CERT_DIR:/etc/nginx/ssl nginx:alpine"
 }
 
-# ===== 启动后端 =====
+# ===== Docker Compose 方式 =====
+compose_cmd() {
+    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        echo "docker compose"
+    elif command -v docker-compose >/dev/null 2>&1; then
+        echo "docker-compose"
+    else
+        echo ""
+    fi
+}
+
+start_docker() {
+    local compose
+    compose=$(compose_cmd)
+    if [ -z "$compose" ]; then
+        echo "  [错误] 未找到 docker compose，请先安装 Docker，或使用 MODE=local 传统方式启动"
+        return 1
+    fi
+
+    echo "==> 启动全部服务（docker compose 方式）"
+    cd "$SCRIPT_DIR"
+    $compose up -d --build
+    echo ""
+    echo "  服务已启动，查看状态: $compose ps"
+    echo "  查看日志: $compose logs -f"
+}
+
+stop_docker() {
+    local compose
+    compose=$(compose_cmd)
+    if [ -z "$compose" ]; then
+        echo "  [错误] 未找到 docker compose，请检查 docker 已安装"
+        return 1
+    fi
+    echo "==> 停止全部服务（docker compose 方式）"
+    cd "$SCRIPT_DIR"
+    $compose down
+}
+
+restart_docker() {
+    local compose
+    compose=$(compose_cmd)
+    if [ -z "$compose" ]; then
+        echo "  [错误] 未找到 docker compose，请检查 docker 已安装"
+        return 1
+    fi
+    echo "==> 重启全部服务（docker compose 方式）"
+    cd "$SCRIPT_DIR"
+    $compose up -d --build --force-recreate
+}
+
+status_docker() {
+    local compose
+    compose=$(compose_cmd)
+    if [ -z "$compose" ]; then
+        echo "  [提示] 未找到 docker compose，无法查看容器状态"
+        return 1
+    fi
+    echo "==> docker compose 服务状态"
+    cd "$SCRIPT_DIR"
+    $compose ps
+}
+
+# ===== 传统方式：检查并安装后端依赖 =====
+ensure_backend_deps() {
+    local PY_CMD="$1"
+    echo "  ==> 检查后端 Python 依赖..."
+
+    # 1. 确保虚拟环境存在
+    if [ ! -d "$BACKEND_DIR/.venv" ] && [ ! -d "$BACKEND_DIR/venv" ]; then
+        echo "  [依赖] 未找到虚拟环境，创建 .venv（使用 $PY_CMD）..."
+        (cd "$BACKEND_DIR" && "$PY_CMD" -m venv .venv)
+    fi
+
+    # 2. 确定 venv 中的 python
+    local VENV_PY=""
+    if [ -d "$BACKEND_DIR/.venv/bin" ]; then
+        VENV_PY="$BACKEND_DIR/.venv/bin/python"
+    elif [ -d "$BACKEND_DIR/venv/bin" ]; then
+        VENV_PY="$BACKEND_DIR/venv/bin/python"
+    fi
+    [ -z "$VENV_PY" ] && VENV_PY="$PY_CMD"
+
+    # 3. 校验依赖：pip check + 关键模块导入
+    local need_install=0
+    if ! "$VENV_PY" -m pip check >/dev/null 2>&1; then
+        echo "  [依赖] pip check 未通过，将重新安装 requirements.txt..."
+        need_install=1
+    fi
+    local missing=""
+    for mod in django rest_framework dotenv; do
+        if ! "$VENV_PY" -c "import $mod" >/dev/null 2>&1; then
+            missing="$missing $mod"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        echo "  [依赖] 检测到缺失模块:$missing，将安装 requirements.txt..."
+        need_install=1
+    fi
+
+    if [ "$need_install" = "1" ]; then
+        (cd "$BACKEND_DIR" && "$VENV_PY" -m pip install -r requirements.txt)
+    else
+        echo "  [依赖] 后端依赖完整，无需安装。"
+    fi
+
+    echo "$VENV_PY"
+}
+
+# ===== 传统方式：启动后端 =====
 start_backend() {
-    echo "==> 启动后端 Django（端口 $BACKEND_PORT）"
+    echo "==> 启动后端服务（端口 $BACKEND_PORT，传统方式）"
     if port_in_use "$BACKEND_PORT"; then
         echo "  [提示] 端口 $BACKEND_PORT 已被占用，跳过后端启动"
         echo "         请确认占用进程是否为旧实例，必要时先执行 ./run.sh stop"
         return 1
     fi
 
-    cd "$BACKEND_DIR"
-    if [ -d ".venv/bin" ]; then
-        PYTHON="$BACKEND_DIR/.venv/bin/python"
-    elif [ -d "venv/bin" ]; then
-        PYTHON="$BACKEND_DIR/venv/bin/python"
-    else
-        PYTHON="python"
+    local PY_CMD
+    PY_CMD=$(detect_python)
+    if [ -z "$PY_CMD" ]; then
+        echo "  [错误] 未找到 python3 或 python，请先安装 Python 3"
+        return 1
     fi
 
-    if [ ! -d ".venv" ] && [ ! -d "venv" ] && [ -z "$SKIP_VENV" ]; then
-        echo "  创建虚拟环境..."
-        python -m venv .venv
-        PYTHON="$BACKEND_DIR/.venv/bin/python"
-        "$PYTHON" -m pip install -r requirements.txt
-    fi
+    local PYTHON
+    PYTHON=$(ensure_backend_deps "$PY_CMD")
 
     echo "  执行数据库迁移..."
     "$PYTHON" manage.py migrate --noinput 2>/dev/null || true
@@ -204,20 +414,32 @@ start_backend() {
     echo "  日志: $LOG_DIR/backend.log"
 }
 
-# ===== 启动前端 =====
+# ===== 传统方式：检查并安装前端依赖 =====
+ensure_frontend_deps() {
+    echo "  ==> 检查前端依赖..."
+    cd "$FRONTEND_DIR"
+    if [ ! -d "node_modules" ]; then
+        echo "  [依赖] 未找到 node_modules，执行 npm install..."
+        npm install
+    else
+        echo "  [依赖] 校验前端依赖完整性..."
+        npm ls --depth=0 >/dev/null 2>&1 || {
+            echo "  [依赖] 依赖不完整或缺失，执行 npm install..."
+            npm install
+        }
+    fi
+}
+
+# ===== 传统方式：启动前端 =====
 start_frontend() {
-    echo "==> 启动前端 Vite（端口 $FRONTEND_PORT）"
+    echo "==> 启动前端服务（端口 $FRONTEND_PORT，传统方式）"
     if port_in_use "$FRONTEND_PORT"; then
         echo "  [提示] 端口 $FRONTEND_PORT 已被占用，跳过前端启动"
         echo "         请确认占用进程是否存在，必要时请执行 ./run.sh stop"
         return 1
     fi
 
-    cd "$FRONTEND_DIR"
-    if [ ! -d "node_modules" ]; then
-        echo "  安装前端依赖..."
-        npm install
-    fi
+    ensure_frontend_deps
 
     mkdir -p "$LOG_DIR" "$PID_DIR"
     nohup npm run dev -- --port $FRONTEND_PORT \
@@ -246,16 +468,16 @@ stop_service() {
     fi
 }
 
-# ===== 停止全部 =====
-stop_all() {
-    echo "==> 停止服务"
+# ===== 传统方式：停止全部 =====
+stop_local_all() {
+    echo "==> 停止服务（传统方式）"
     stop_service "$(get_backend_pid)" "后端 Django" "$BACKEND_PID_FILE"
     stop_service "$(get_frontend_pid)" "前端 Vite" "$FRONTEND_PID_FILE"
     echo "  服务已停止"
 }
 
-# ===== 状态查询 =====
-show_status() {
+# ===== 传统方式：状态查询 =====
+show_status_local() {
     echo "============================================"
     echo "  萌芽（mengya）平台"
     echo "============================================"
@@ -286,44 +508,69 @@ show_status() {
 CMD="${1:-start}"
 case "$CMD" in
     start|"")
-        start_backend
-        start_frontend
-        show_status
-        echo "============================================"
-        echo "  启动完成！"
-        echo "  内部访问: http://localhost:$BACKEND_PORT (后端) / http://localhost:$FRONTEND_PORT (前端)"
-        echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
-        echo "============================================"
+        choose_mode
+        validate_mode
+        save_mode
+        if [ "$MODE" = "docker" ]; then
+            start_docker
+        else
+            start_backend
+            start_frontend
+            show_status_local
+            echo "============================================"
+            echo "  启动完成！"
+            echo "  内部访问: http://localhost:$BACKEND_PORT (后端) / http://localhost:$FRONTEND_PORT (前端)"
+            echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
+            echo "============================================"
+        fi
         ;;
     stop)
-        stop_all
+        last=$(get_last_mode)
+        if [ "$last" = "docker" ]; then
+            stop_docker
+        else
+            stop_local_all
+        fi
         ;;
     restart)
-        stop_all
-        echo ""
-        echo "==> 重新启动..."
-        sleep 1
-        start_backend
-        start_frontend
-        show_status
-        echo "============================================"
-        echo "  重启完成！"
-        echo "  内部访问: http://localhost:$BACKEND_PORT / http://localhost:$FRONTEND_PORT"
-        echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
-        echo "============================================"
+        choose_mode
+        validate_mode
+        save_mode
+        if [ "$MODE" = "docker" ]; then
+            restart_docker
+        else
+            stop_local_all
+            echo ""
+            echo "==> 重新启动..."
+            sleep 1
+            start_backend
+            start_frontend
+            show_status_local
+            echo "============================================"
+            echo "  重启完成！"
+            echo "  内部访问: http://localhost:$BACKEND_PORT / http://localhost:$FRONTEND_PORT"
+            echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
+            echo "============================================"
+        fi
         ;;
     status)
-        show_status
+        last=$(get_last_mode)
+        if [ "$last" = "docker" ]; then
+            status_docker
+        else
+            show_status_local
+        fi
         ;;
     add_nginx)
         gen_nginx_config
         ;;
     -h|--help|help)
-        sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '1,35p' "$0" | sed 's/^# \{0,1\}//'
         ;;
     *)
         echo "未知命令: $CMD"
         echo "用法: ./run.sh [start|stop|restart|status|add_nginx|help]"
+        echo "      启动前可指定 MODE=docker|local 跳过交互选择"
         exit 1
         ;;
 esac

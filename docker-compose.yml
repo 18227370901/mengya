@@ -87,6 +87,8 @@ services:
     ports:
       - "${EXTERNAL_PORT:-10224}:10224"
     volumes:
+      # 注：此处使用项目内置的 nginx/mengya_ssl.conf（容器内路径固定）
+      # 与 run.sh add_nginx 生成的 /opt/service/nginx/conf.d 配置是两种独立用法，互不影响
       - ./nginx/mengya_ssl.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:

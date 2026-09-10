@@ -16,6 +16,11 @@ dist/
 *.db
 db.sqlite3
 
-# ÔËĞĞÊ±ÈÕÖ¾Óë¹¹½¨»º´æ
+# è¿è¡Œæ—¶æ—¥å¿—ä¸æ„å»ºç¼“å­˜
 *.err
 *.tsbuildinfo
+
+# run.sh è¿è¡Œæ—¶äº§ç‰©
+.run/
+.run_mode
+logs/

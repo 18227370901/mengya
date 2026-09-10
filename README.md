@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'c67d2d83-3528-4352-9594-042d21b3126b'
-  PropagateID: 'c67d2d83-3528-4352-9594-042d21b3126b'
-  ReservedCode1: '073c1c6a-d7f5-4784-b9d1-677ac5a0f08b'
-  ReservedCode2: '073c1c6a-d7f5-4784-b9d1-677ac5a0f08b'
+  ProduceID: '9e047f20-6f5d-4f4c-9b8e-53674dab1c72'
+  PropagateID: '9e047f20-6f5d-4f4c-9b8e-53674dab1c72'
+  ReservedCode1: 'bd4368b4-7d8c-4827-9fac-435ee386670a'
+  ReservedCode2: 'bd4368b4-7d8c-4827-9fac-435ee386670a'
 ---
 
 # 萌芽（MengYa）· 母婴全周期陪伴平台
@@ -23,7 +23,7 @@ AIGC:
 | 数据库 | SQLite（本地开发）/ PostgreSQL 15（Docker 部署） |
 | 前端 | React 18 + TypeScript + Vite + Tailwind CSS 3 + ECharts |
 | AI | OpenAI 兼容接口（Agnes / OpenAI / 任意兼容服务）+ DuckDuckGo 联网搜索 |
-| 编排 | Docker Compose（db / redis / backend / worker / frontend） |
+| 编排 | Docker Compose（db / redis / backend / worker / frontend）+ run.sh 服务管理脚本 |
 
 ## 快速开始（本地开发）
 
@@ -80,6 +80,57 @@ docker compose up -d --build
 # 3. 查看日志
 docker compose logs -f backend
 ```
+
+## 服务管理脚本 run.sh（推荐）
+
+> 服务器上建议使用 `run.sh` 统一管理服务，支持 Docker Compose 与传统本地方式双模式。
+
+```bash
+# 交互式选择启动方式（docker / local），并记住选择
+./run.sh start
+
+# 指定方式启动
+MODE=docker ./run.sh start        # Docker Compose 方式（推荐，适合服务器）
+MODE=local ./run.sh start         # 传统方式（本机 python3 + vite）
+
+# 自定义账号与端口示例
+ADMIN_USERNAME=admin_yy ADMIN_PASSWORD=mypassword MODE=local ./run.sh start
+BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
+
+# 其他命令
+./run.sh stop          # 停止全部服务
+./run.sh restart       # 重启全部服务
+./run.sh status        # 查看服务状态
+./run.sh add_nginx     # 生成 nginx SSL 配置（生成到 /opt/service/nginx/conf.d/）
+./run.sh help          # 帮助
+```
+
+### 启动方式说明
+
+| 方式 | 适用场景 | 说明 |
+| --- | --- | --- |
+| `docker` | 服务器 / 容器环境（推荐） | 自动探测 `docker compose` / `docker-compose`，编排 db/redis/backend/worker/frontend/nginx |
+| `local` | 本地开发 / 无 Docker 环境 | 后端 `python3` + venv 自动建环境装依赖；前端 `npm install` + vite dev |
+
+### 依赖自动校验（传统方式）
+
+- 后端：自动创建 `.venv`，`pip check` 或关键模块（django/rest_framework/dotenv）缺失时自动安装 `requirements.txt`
+- 前端：`node_modules` 缺失或 `npm ls` 不完整时自动 `npm install`
+
+### 可配置环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ADMIN_USERNAME` | `13800000001` | 管理员账号 |
+| `ADMIN_PASSWORD` | `admin123` | 管理员密码 |
+| `ADMIN_NICKNAME` | `管理员` | 管理员昵称 |
+| `BACKEND_PORT` | `8000` | 后端端口 |
+| `FRONTEND_PORT` | `5173` | 前端端口 |
+| `EXTERNAL_PORT` | `10224` | nginx 外部访问端口 |
+| `NGINX_CONF_DIR` | `/opt/service/nginx/conf.d` | nginx 配置目录（add_nginx 生成位置） |
+| `NGINX_CERT_DIR` | `/opt/service/nginx/ssl` | nginx 证书目录 |
+
+> 服务器为 Ubuntu/Debian 时通常只有 `python3` 命令，run.sh 已自动探测 `python3` / `python`，无需手动创建虚拟环境。
 
 ## 核心功能
 
@@ -345,10 +396,11 @@ System Prompt 中的关键指令：
 
 ```
 mengya/
-├── docker-compose.yml             # 五服务编排（db/redis/backend/worker/frontend）
-├── .env.example                   # 环境变量模板
+├── run.sh                        # 服务管理脚本（start/stop/restart/status/add_nginx）
+├── docker-compose.yml            # 五服务编排（db/redis/backend/worker/frontend）
+├── .env.example                  # 环境变量模板
 ├── .gitignore
-├── nginx/                         # Nginx 反向代理示例
+├── nginx/                        # Nginx 反向代理示例（nginx.conf / mengya_ssl.conf）
 ├── backend/
 │   ├── config/                    # Django 配置（settings / urls / celery）
 │   ├── requirements.txt
@@ -430,6 +482,13 @@ mengya/
 ## 常用命令
 
 ```bash
+# 服务管理（推荐）
+./run.sh start                     # 启动（交互式选择 docker/local）
+./run.sh stop                      # 停止
+./run.sh restart                   # 重启
+./run.sh status                    # 状态
+./run.sh add_nginx                 # 生成 nginx SSL 配置
+
 # 本地开发
 python manage.py runserver 0.0.0.0:8000     # 启动后端
 npm run dev                                  # 启动前端开发服务器

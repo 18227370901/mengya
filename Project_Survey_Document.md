@@ -3,18 +3,18 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '4ef2e0b7-90ff-4991-be8e-834b2190bd17'
-  PropagateID: '4ef2e0b7-90ff-4991-be8e-834b2190bd17'
-  ReservedCode1: '3e12095e-d976-4623-aafa-a43ad9eef04d'
-  ReservedCode2: '3e12095e-d976-4623-aafa-a43ad9eef04d'
+  ProduceID: '77c90726-37b2-4441-879b-c2d6e168caa8'
+  PropagateID: '77c90726-37b2-4441-879b-c2d6e168caa8'
+  ReservedCode1: '768a71ad-4e6e-4b5a-b993-2caf8378feee'
+  ReservedCode2: '768a71ad-4e6e-4b5a-b993-2caf8378feee'
 ---
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.1
-> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块）
+> 文档版本：v1.2
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
-> 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/系统设计）阶段提供事实基础与决策输入
+> 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/解决方案设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
 
 ---
@@ -30,8 +30,9 @@ AIGC:
 7. [可观测性现状](#7-可观测性现状)
 8. [外部依赖与集成现状](#8-外部依赖与集成现状)
 9. [前端/客户端现状](#9-前端客户端现状)
-10. [现存问题与风险清单](#10-现存问题与风险清单)
-11. [待明确的架构决策点](#11-待明确的架构决策点)
+10. [部署与服务管理脚本（run.sh）](#10-部署与服务管理脚本runsh)
+11. [现存问题与风险清单](#11-现存问题与风险清单)
+12. [待明确的架构决策点](#12-待明确的架构决策点)
 
 ---
 
@@ -499,7 +500,84 @@ React 18 + TypeScript + Vite + Tailwind CSS 3 + Zustand + ECharts（雷达图/�
 
 ---
 
-## 10. 现存问题与风险清单
+## 10. 部署与服务管理脚本（run.sh）
+
+> v1.2 新增章节。记录 2026-09-10 对 run.sh 的重构，作为部署基线增量。
+
+### 10.1 背景与动机
+
+- 原 run.sh 硬编码使用 `python` 命令创建虚拟环境，在**仅安装 `python3`** 的服务器（Ubuntu/Debian 默认无 `python` 别名）上会启动失败。
+- 原脚本仅支持传统方式（本地 venv + vite），未覆盖服务器常见的 Docker Compose 部署场景。
+- 用户明确要求：**不直接默认传统方式**，需要引入 Docker Compose 作为推荐启动方式，且 `start/restart` 时**交互式提示用户明确选择启动方式**。
+
+### 10.2 功能总览
+
+| 子命令 | 说明 |
+|---|---|
+| `start` | 启动全部服务（交互式选择启动方式） |
+| `stop` | 停止全部服务（按上次选择的模式） |
+| `restart` | 重启全部服务 |
+| `status` | 查看服务运行状态 |
+| `add_nginx` | 生成 nginx SSL 配置（需在服务器上单独手动执行） |
+| `help` | 显示帮助 |
+
+### 10.3 启动方式选择机制
+
+```
+MODE 环境变量已设置 → 直接使用（校验取值）
+         ↓ 未设置
+读取上次选择（.run_mode 文件） → 交互确认「是否继续使用上次方式？」
+         ↓ 无记录或用户选择更换
+交互式菜单选择：1) docker（推荐） 2) local（传统）
+         ↓
+保存选择到 .run_mode → 后续 stop/status 按该模式分发
+```
+
+- 优先级：`MODE 环境变量` → `.run_mode` 记忆文件 → 交互选择。
+- `docker` 方式使用 `docker compose`（自动探测 `docker compose` / `docker-compose` 两种命令形态）。
+- `local` 方式自动校验后端 Python 依赖与前端 node_modules，缺失自动安装。
+
+### 10.4 可配置项（环境变量覆盖）
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `ADMIN_USERNAME` | `13800000001` | 管理员账号（手机号或用户名） |
+| `ADMIN_PASSWORD` | `admin123` | 管理员密码 |
+| `ADMIN_NICKNAME` | `管理员` | 管理员昵称 |
+| `BACKEND_PORT` | `8000` | 后端服务端口 |
+| `FRONTEND_PORT` | `5173` | 前端服务端口 |
+| `EXTERNAL_PORT` | `10224` | 外部访问端口（nginx SSL 反代） |
+| `MODE` | （空） | 启动方式 `docker` / `local` |
+| `NGINX_CONF_DIR` | `/opt/service/nginx/conf.d` | nginx 配置目录 |
+| `NGINX_CERT_DIR` | `/opt/service/nginx/ssl` | nginx 证书目录 |
+
+### 10.5 依赖自动校验（传统方式）
+
+- **后端**：`ensure_backend_deps()` 检查 `.venv` / `venv`，不存在则创建；`pip check` 未通过或关键模块（django / rest_framework / dotenv）缺失时自动 `pip install -r requirements.txt`。
+- **前端**：`ensure_frontend_deps()` 检查 `node_modules`，不存在或 `npm ls --depth=0` 不完整时自动 `npm install`。
+- 目的：避免启动后「模块不存在」类报错，保证传统方式开箱即用。
+
+### 10.6 nginx 配置生成（add_nginx）
+
+- 生成位置：`$NGINX_CONF_DIR/mengya_ssl.conf`（默认 `/opt/service/nginx/conf.d/mengya_ssl.conf`）。
+- 证书目录：`$NGINX_CERT_DIR`（默认 `/opt/service/nginx/ssl`），缺失时自动用 openssl 生成自签名证书。
+- 配置内容：`listen $EXTERNAL_PORT ssl`、反代前端 `127.0.0.1:$FRONTEND_PORT` 与后端 `127.0.0.1:$BACKEND_PORT`（/api/ 与 /admin/ 前缀）、安全头、20M 上传限制。
+- 使用提示：确认 nginx 主配置已 `include $NGINX_CONF_DIR/*.conf;` 后执行 `nginx -t && nginx -s reload`。
+
+### 10.7 与 docker-compose 的关系
+
+- `docker-compose.yml` 中 nginx 服务挂载项目内置 `nginx/mengya_ssl.conf`（容器内 `/etc/nginx/conf.d/default.conf`），与 `run.sh add_nginx` 生成到 `/opt/service/nginx/conf.d/` 的配置是**两种独立用法**，互不影响：前者用于 Docker 编排内反代，后者用于服务器本机 nginx 反代。
+- 传统模式下生成的 PID 文件位于 `.run/`，日志位于 `logs/`，均已加入 `.gitignore`。
+
+### 10.8 已知限制
+
+- 脚本为 bash 实现，依赖 Linux 环境（`/proc`、`ss`/`lsof`、`nohup`）；Windows 本地（无 WSL）无法直接执行。
+- `stop` / `status` 依赖 `.run_mode` 记忆文件判断模式；若从未运行过则默认走传统方式分支。
+- `docker compose` 方式未做版本号强校验，依赖本机已安装 docker compose v2 或 v1 的 `docker-compose`。
+
+---
+
+## 11. 现存问题与风险清单
 
 > 分级：P0（立即处理）/ P1（尽快处理）/ P2（规划处理）。风险等级：严重 / 高 / 中 / 低。
 
@@ -523,7 +601,7 @@ React 18 + TypeScript + Vite + Tailwind CSS 3 + Zustand + ECharts（雷达图/�
 
 ---
 
-## 11. 待明确的架构决策点
+## 12. 待明确的架构决策点
 
 > 共 18 个决策点，覆盖用户体系/商品/库存/支付/营销/配送/售后/内容审核/消息通知/数据权限/多语言/高并发/埋点/合规等。每个决策点含背景、可选答案、推荐。
 
@@ -638,8 +716,11 @@ React 18 + TypeScript + Vite + Tailwind CSS 3 + Zustand + ECharts（雷达图/�
 | `frontend/src/components/HealthCalendar.tsx` | 健康记录日历组件（新增） |
 | `frontend/src/components/CopyButton.tsx` | 复制按钮组件（新增） |
 | `frontend/src/pages/BabyShoppingDetailPage.tsx` | 宝宝购物清单详情页（新增） |
-| `docker-compose.yml` | 5 服务编排 |
-| `nginx/nginx.conf` | 反向代理 |
+| `docker-compose.yml` | 5 服务编排（db/redis/backend/worker/frontend + nginx） |
+| `nginx/nginx.conf` | 反向代理（HTTP 80） |
+| `nginx/mengya_ssl.conf` | 反向代理（HTTPS，Docker 编排内使用） |
+| `run.sh` | 服务管理脚本（start/stop/restart/status/add_nginx，支持 docker/local 双模式，2026-09-10 重构） |
+| `.run_mode` / `.run/` / `logs/` | run.sh 运行时产物（已加入 .gitignore） |
 
 ## 附 B：已知验证结论
 
