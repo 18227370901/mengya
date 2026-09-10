@@ -87,6 +87,8 @@ docker compose logs -f backend
 > **PG18 数据卷挂载约定**：PostgreSQL 18+ 镜像要求数据卷挂载到父目录 `/var/lib/postgresql`（而非旧版 `/var/lib/postgresql/data`），数据会自动放入子目录（如 `18/docker`），以支持 `pg_upgrade --link`。本仓库 `docker-compose.yml` 已按此约定配置（`pgdata:/var/lib/postgresql`）。若挂载到 `/var/lib/postgresql/data`，PG18 会判定为「unused mount/volume」并拒绝启动（容器 exited 1）。
 > 旧 `pgdata` 卷若是 PG15 格式：无重要数据可 `docker compose down -v` 清卷重建；需保留数据则换回 `DB_IMAGE=postgres:15-alpine`（此时挂载点需回退为 `/var/lib/postgresql/data`）。
 > **安全说明**：`docker compose down -v` 仅删除**当前 compose 项目自己的 `pgdata` 卷**（实际卷名 `mengya_pgdata`），**不会删除任何 docker 镜像**（`pgvector/pgvector:pg18` 等仍在本地，可继续复用），也**不影响其他项目的容器、镜像与数据卷**。
+>
+> **跨容器代理与 Host 配置**：Docker Compose 模式下，前端容器通过 `BACKEND_URL=http://backend:8000` 环境变量自动将 `/api` 请求代理至后端容器，且后端已配置 `DJANGO_ALLOWED_HOSTS=*`（默认允许容器间 Host 与服务器 IP），保证登录、注册等接口开箱即用，避免容器内 `localhost` 无法寻址引发 500 错误。
 
 ### 可选服务（compose profiles）
 

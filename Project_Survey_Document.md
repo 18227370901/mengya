@@ -11,8 +11,8 @@ AIGC:
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.6
-> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停；v1.6 更新：2026-09-10，修复 PG18 数据卷挂载点并补充挂载约定）
+> 文档版本：v1.7
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停；v1.6 更新：2026-09-10，修复 PG18 数据卷挂载点并补充挂载约定；v1.7 更新：2026-09-10，修复 Docker 容器内 Vite 代理跨容器寻址与 Django ALLOWED_HOSTS 配置，解决登录 500 与获取注册模式失败）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
 > 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/解决方案设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
@@ -617,6 +617,26 @@ MODE 环境变量已设置 → 直接使用（校验取值）
   2. 保留旧数据 → 换回 `DB_IMAGE=postgres:15-alpine ./run.sh start`，但挂载点需回退为 `/var/lib/postgresql/data`。
 - **安全说明**：`docker compose down -v` 仅删除当前 compose 项目自己的 `pgdata` 卷（实际卷名 `mengya_pgdata`），**不会删除任何 docker 镜像**（`pgvector/pgvector:pg18` 等仍保留可复用），也不影响其他项目的容器/镜像/数据卷。
 - 端口说明：compose 中 `5433:5432` 表示**宿主机 5433 → 容器 5432**，容器内部仍为 5432，backend 使用 `db:5432` 连接不受影响。
+
+#### ④ Docker 容器内 Vite 代理跨容器寻址与 ALLOWED_HOSTS 修复（v1.7 新增）
+
+> 2026-09-10 修复：解决本地部署正常、Docker 部署后登录报错 500 及立即注册报错「无法获取注册模式」的根因。
+
+- **问题现象**：
+  - 本地运行（`MODE=local`）一切正常。
+  - Docker 部署启动后，访问注册页报错：`无法获取注册模式，请检查网络后刷新页面重试`；点击登录报错：`Request failed with status code 500`。
+- **根本原因**：
+  1. **Vite 代理硬编码 localhost**：`frontend/vite.config.ts` 中的代理目标硬编码为 `http://localhost:8000`。在 Docker 容器网络中，前端容器 `mengya_frontend` 内部的 `localhost` 仅指向前端容器自身，未监听 8000 端口（后端运行在独立的 `mengya_backend` 容器）。请求直接遭遇 `ECONNREFUSED 127.0.0.1:8000`，Vite 代理返回 HTTP 500。
+  2. **Django ALLOWED_HOSTS 限制**：原 `settings.py` 默认仅允许 `localhost,127.0.0.1,0.0.0.0`。Vite 跨容器代理发往 `backend:8000`（携带 Host 为 `backend:8000`）时，会被 Django 的 Host 校验拦截报 HTTP 400 Bad Request。
+  3. **Docker 编排缺少环境变量**：`docker-compose.yml` 未给 `frontend` 注入 `BACKEND_URL`，且 `backend` 的环境变量中账号字段命名未完全对齐。
+- **整改措施**：
+  1. `frontend/vite.config.ts`：通过 `loadEnv` 与 `process.env.BACKEND_URL` 动态读取后端地址，未配置时回退为 `http://localhost:8000`（确保 local 开发模式无缝运行）。
+  2. `docker-compose.yml`：
+     - `frontend` 服务添加环境变量 `BACKEND_URL=http://backend:8000`。
+     - `backend` 服务注入 `DJANGO_ALLOWED_HOSTS: "*"`，并兼容 `ADMIN_USERNAME` / `ADMIN_PHONE`。
+     - `backend` 启动命令补充 `init_fetal_stories` 种子数据初始化。
+  3. `backend/config/settings.py`：`ALLOWED_HOSTS` 默认回退值加入 `backend,*`，`.env` 与 `.env.example` 同步更新。
+  4. `ensure_admin.py`：兼容读取 `ADMIN_USERNAME` 与 `ADMIN_PHONE`。
 
 ### 10.8 已知限制
 

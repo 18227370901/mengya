@@ -21,7 +21,7 @@ class Command(BaseCommand):
     help = "确保管理员账号存在（不存在则创建，存在则更新密码和权限）"
 
     def handle(self, *args, **options):
-        account = os.getenv("ADMIN_USERNAME", "13800000001")
+        account = os.getenv("ADMIN_USERNAME") or os.getenv("ADMIN_PHONE") or "13800000001"
         password = os.getenv("ADMIN_PASSWORD", "admin123")
         nickname = os.getenv("ADMIN_NICKNAME", "管理员")
 
