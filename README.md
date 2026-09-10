@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: '05c8ba07-83c2-4ecd-afe2-1543e098d5d9'
-  PropagateID: '05c8ba07-83c2-4ecd-afe2-1543e098d5d9'
-  ReservedCode1: '219a9814-0b6d-43d9-b72d-461eb8aed726'
-  ReservedCode2: '219a9814-0b6d-43d9-b72d-461eb8aed726'
+  ProduceID: 'f304bae9-a4dd-402d-8e1c-becef00be999'
+  PropagateID: 'f304bae9-a4dd-402d-8e1c-becef00be999'
+  ReservedCode1: 'e15a713e-ae19-4508-b449-2f5c1491a458'
+  ReservedCode2: 'e15a713e-ae19-4508-b449-2f5c1491a458'
 ---
 
 # 萌芽（MengYa）· 母婴全周期陪伴平台
@@ -86,7 +86,7 @@ docker compose logs -f backend
 > 服务器上建议使用 `run.sh` 统一管理服务，支持 Docker Compose 与传统本地方式双模式。
 
 ```bash
-# 直接执行（无参数默认启动，先提示用法再选择启动方式）
+# 无参数执行：仅显示用法提示并退出（不启动服务）
 ./run.sh
 sh run.sh            # 兼容 sh 方式执行（自动改用 bash 运行）
 
@@ -116,7 +116,7 @@ BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
 | `docker` | 服务器 / 容器环境（推荐） | 自动探测 `docker compose` / `docker-compose`，编排 db/redis/backend/worker/frontend/nginx |
 | `local` | 本地开发 / 无 Docker 环境 | 后端 `python3` + venv 自动建环境装依赖；前端 `npm install` + vite dev |
 
-> 无参数直接运行 `./run.sh` 或 `sh run.sh` 时：默认执行启动，先打印可用子命令提示，再交互式选择启动方式（不报错）。脚本内部自动检测解释器，`sh` 方式会自动改用 bash 运行，兼容 bash 语法。
+> 无参数直接运行 `./run.sh` 或 `sh run.sh` 时：仅显示可用子命令提示并退出，**不启动任何服务**；需显式执行 `./run.sh start` 才会启动。脚本内部自动检测解释器，`sh` 方式会自动改用 bash 运行，兼容 bash 语法。
 
 ### 依赖自动校验（传统方式）
 

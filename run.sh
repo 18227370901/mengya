@@ -3,7 +3,7 @@
 # 萌芽（mengya）平台服务管理脚本
 #
 # 用法：
-#   ./run.sh               启动全部服务（无参数默认启动，交互式选择启动方式）
+#   ./run.sh               无参数：显示使用提示并退出（不启动服务）
 #   ./run.sh start          启动全部服务（交互式选择启动方式）
 #   ./run.sh stop           停止全部服务
 #   ./run.sh restart        重启全部服务
@@ -13,7 +13,7 @@
 #
 # 说明：
 #   - 支持 ./run.sh 或 sh run.sh 方式执行（自动改用 bash 运行本脚本）
-#   - 无参数直接回车时，默认执行启动，并显示脚本用法提示
+#   - 无参数直接回车时，仅显示使用提示并退出，不执行任何操作
 #
 # 启动方式（二选一）：
 #   MODE=docker   使用 docker compose（推荐，适合服务器/容器环境）
@@ -523,26 +523,27 @@ show_status_local() {
 }
 
 # ===== 命令分发 =====
-CMD="${1:-start}"
+CMD="${1:-}"
 case "$CMD" in
-    start|"")
-        if [ -z "$1" ]; then
-            echo ""
-            echo "============================================"
-            echo "  萌芽（mengya）平台服务管理脚本"
-            echo "============================================"
-            echo "  无参数执行，默认启动服务。"
-            echo "  可用子命令："
-            echo "    ./run.sh start      启动服务（当前默认执行）"
-            echo "    ./run.sh stop       停止服务"
-            echo "    ./run.sh restart    重启服务"
-            echo "    ./run.sh status     查看状态"
-            echo "    ./run.sh add_nginx  生成 nginx SSL 配置"
-            echo "    ./run.sh help       查看帮助"
-            echo "  启动方式：MODE=docker|local 指定，或交互式选择"
-            echo "============================================"
-            echo ""
-        fi
+    "")
+        # 无参数执行：只显示用法提示，退出，不启动任何服务
+        echo ""
+        echo "============================================"
+        echo "  萌芽（mengya）平台服务管理脚本"
+        echo "============================================"
+        echo "  未指定子命令，请输入以下命令执行："
+        echo "    ./run.sh start      启动服务（交互式选择启动方式）"
+        echo "    ./run.sh stop       停止服务"
+        echo "    ./run.sh restart    重启服务"
+        echo "    ./run.sh status     查看状态"
+        echo "    ./run.sh add_nginx  生成 nginx SSL 配置"
+        echo "    ./run.sh help       查看帮助"
+        echo "  启动方式：MODE=docker|local 指定，或交互式选择"
+        echo "============================================"
+        echo ""
+        exit 0
+        ;;
+    start)
         choose_mode
         validate_mode
         save_mode
