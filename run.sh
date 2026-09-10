@@ -31,6 +31,15 @@
 #   BACKEND_PORT      后端服务端口（默认 8000）
 #   FRONTEND_PORT     前端服务端口（默认 5173）
 #   EXTERNAL_PORT     外部访问端口（默认 10224，nginx SSL 反代）
+#   DB_IMAGE          数据库镜像（默认 pgvector/pgvector:pg18；本地已有则直接复用）
+#   ENABLE_WORKER     是否启用 redis/worker（auto=自动检测 Celery 任务，1=强制启用，0=禁用，默认 auto）
+#   ENABLE_NGINX      是否启用 nginx 容器（1=启用，默认 0）
+#
+# Docker 镜像策略：
+#   - 启动前自动检测本地已有镜像，存在则直接复用，不存在才拉取
+#   - 数据库镜像优先级：DB_IMAGE 环境变量 > 本地已有 pgvector/pgvector:pg18 > postgres:15-alpine > 默认 pgvector
+#   - redis/worker 默认不启动（无 Celery 任务时），检测到任务或 ENABLE_WORKER=1 才启动
+#   - nginx 默认不启动，ENABLE_NGINX=1 启用
 #
 # 用法示例：
 #   ./run.sh
@@ -300,6 +309,82 @@ compose_cmd() {
     fi
 }
 
+# ===== 镜像检测与可选服务控制 =====
+
+# 检测本地是否已存在指定镜像（精确匹配仓库:标签）
+image_exists() {
+    local img="$1"
+    [ -z "$img" ] && return 1
+    docker image inspect "$img" >/dev/null 2>&1
+}
+
+# 智能选择数据库镜像：
+#   1. DB_IMAGE 环境变量强制指定
+#   2. 本地已存在 pgvector/pgvector:pg18 → 直接复用（不拉取）
+#   3. 本地已存在 postgres:15-alpine → 复用旧镜像（兼容旧数据卷）
+#   4. 均不存在 → 使用默认 pgvector/pgvector:pg18（启动时由 compose 拉取）
+choose_db_image() {
+    local img
+    if [ -n "${DB_IMAGE:-}" ]; then
+        echo "$DB_IMAGE"
+        return 0
+    fi
+    for img in pgvector/pgvector:pg18 postgres:15-alpine; do
+        if image_exists "$img"; then
+            echo "$img"
+            return 0
+        fi
+    done
+    echo "pgvector/pgvector:pg18"
+}
+
+# 检测后端是否存在 Celery 异步任务（tasks.py 或 @shared_task/@app.task 定义）
+has_celery_tasks() {
+    grep -rqE "@(shared_task|app\.task)|\.delay\(|apply_async" "$BACKEND_DIR" --include="*.py" 2>/dev/null
+}
+
+# 组装 docker compose 附加参数（profiles + 环境变量）
+#   - redis/worker：检测到 Celery 任务则附加 celery profile；ENABLE_WORKER=1/0 可强制
+#   - nginx：       ENABLE_NGINX=1 时附加 nginx profile
+# 注意：提示信息输出到 stderr，仅将 --profile 参数输出到 stdout（供命令替换捕获）
+compose_extra_args() {
+    local args=""
+    local enable_worker="${ENABLE_WORKER:-auto}"
+
+    if [ "$enable_worker" = "1" ]; then
+        args="$args --profile celery"
+        echo "  [Docker] ENABLE_WORKER=1 已强制启用 redis/worker（celery profile）" >&2
+    elif [ "$enable_worker" = "0" ]; then
+        echo "  [Docker] ENABLE_WORKER=0 已禁用 redis/worker（celery profile）" >&2
+    elif has_celery_tasks; then
+        args="$args --profile celery"
+        echo "  [Docker] 检测到后端 Celery 任务，启用 redis/worker（celery profile）" >&2
+    else
+        echo "  [Docker] 未检测到 Celery 任务，跳过 redis/worker" >&2
+    fi
+
+    if [ "${ENABLE_NGINX:-0}" = "1" ]; then
+        args="$args --profile nginx"
+        echo "  [Docker] ENABLE_NGINX=1 已启用 nginx（nginx profile）" >&2
+    else
+        echo "  [Docker] ENABLE_NGINX 未开启，跳过 nginx" >&2
+    fi
+
+    echo "$args"
+}
+
+# 输出本次启动将启用的服务清单（供用户确认）
+compose_summary() {
+    local img db_image
+    img=$(choose_db_image)
+    echo "  [Docker] 数据库镜像: $img"
+    if image_exists "$img"; then
+        echo "  [Docker] 镜像已存在本地，直接复用，无需拉取"
+    else
+        echo "  [Docker] 镜像不存在本地，启动时将自动拉取: $img"
+    fi
+}
+
 start_docker() {
     local compose
     compose=$(compose_cmd)
@@ -309,8 +394,13 @@ start_docker() {
     fi
 
     echo "==> 启动全部服务（docker compose 方式）"
+    compose_summary
+
+    local args
+    args=$(compose_extra_args)
+
     cd "$SCRIPT_DIR"
-    $compose up -d --build
+    DB_IMAGE="$(choose_db_image)" $compose up -d --build $args
     echo ""
     echo "  服务已启动，查看状态: $compose ps"
     echo "  查看日志: $compose logs -f"
@@ -325,7 +415,9 @@ stop_docker() {
     fi
     echo "==> 停止全部服务（docker compose 方式）"
     cd "$SCRIPT_DIR"
-    $compose down
+    local args
+    args=$(compose_extra_args)
+    $compose down $args
 }
 
 restart_docker() {
@@ -336,8 +428,11 @@ restart_docker() {
         return 1
     fi
     echo "==> 重启全部服务（docker compose 方式）"
+    compose_summary
+    local args
+    args=$(compose_extra_args)
     cd "$SCRIPT_DIR"
-    $compose up -d --build --force-recreate
+    DB_IMAGE="$(choose_db_image)" $compose up -d --build --force-recreate $args
 }
 
 status_docker() {
@@ -349,7 +444,9 @@ status_docker() {
     fi
     echo "==> docker compose 服务状态"
     cd "$SCRIPT_DIR"
-    $compose ps
+    local args
+    args=$(compose_extra_args)
+    $compose ps $args
 }
 
 # ===== 传统方式：检查并安装后端依赖 =====
@@ -601,7 +698,7 @@ case "$CMD" in
         gen_nginx_config
         ;;
     -h|--help|help)
-        sed -n '1,35p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '1,50p' "$0" | sed 's/^# \{0,1\}//'
         ;;
     *)
         echo "未知命令: $CMD"

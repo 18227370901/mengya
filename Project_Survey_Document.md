@@ -3,16 +3,16 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'd27a1416-2b2b-44d1-a5b6-1a2eea8e5a49'
-  PropagateID: 'd27a1416-2b2b-44d1-a5b6-1a2eea8e5a49'
-  ReservedCode1: '423fd076-47bb-4a70-b6c4-40360fcd5148'
-  ReservedCode2: '423fd076-47bb-4a70-b6c4-40360fcd5148'
+  ProduceID: '47141ae5-4502-4b24-bf35-3f82752ea69b'
+  PropagateID: '47141ae5-4502-4b24-bf35-3f82752ea69b'
+  ReservedCode1: '9a879962-bf12-49a7-b1a6-fbc7619c1919'
+  ReservedCode2: '9a879962-bf12-49a7-b1a6-fbc7619c1919'
 ---
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.4
-> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出）
+> 文档版本：v1.5
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
 > 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/解决方案设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
@@ -578,12 +578,40 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 - `docker-compose.yml` 中 nginx 服务挂载项目内置 `nginx/mengya_ssl.conf`（容器内 `/etc/nginx/conf.d/default.conf`），与 `run.sh add_nginx` 生成到 `/opt/service/nginx/conf.d/` 的配置是**两种独立用法**，互不影响：前者用于 Docker 编排内反代，后者用于服务器本机 nginx 反代。
 - 传统模式下生成的 PID 文件位于 `.run/`，日志位于 `logs/`，均已加入 `.gitignore`。
 
+### 10.7a Docker 镜像复用与可选服务控制（v1.5 新增）
+
+> 2026-09-10 实现：服务器已有镜像时直接复用，不重复拉取；可选服务由 run.sh 启动前自动判断启停。
+
+**① 镜像复用策略（通用）**
+
+- `docker-compose.yml` 中所有镜像均支持环境变量覆盖（`${VAR:-默认值}` 语法），数据库默认 `pgvector/pgvector:pg18`。
+- Docker 本身行为：**本地已有同名镜像会直接复用，不重复拉取**；`run.sh` 启动前通过 `docker image inspect` 探测并打印「已存在本地，直接复用」或「不存在，启动时拉取」。
+- 数据库镜像选择优先级（`choose_db_image()`）：
+  1. `DB_IMAGE` 环境变量强制指定
+  2. 本地已存在 `pgvector/pgvector:pg18` → 复用
+  3. 本地已存在 `postgres:15-alpine` → 复用（兼容旧数据卷）
+  4. 均不存在 → 默认 `pgvector/pgvector:pg18`（启动时拉取）
+- 注意：`pgvector/pgvector:pg18` 与 `postgres:15-alpine` **数据目录不兼容**，切换镜像后旧数据卷需重建/重新初始化。
+
+#### ② 可选服务控制（compose profiles）
+
+| 服务 | profile | 默认 | 控制方式 |
+|---|---|---|---|
+| redis / worker | `celery` | 不启动 | 自动检测后端是否存在 Celery 任务（`@shared_task`/`@app.task`/`.delay()`/`apply_async`），有则启用；`ENABLE_WORKER=1/0` 可强制覆盖 |
+| nginx | `nginx` | 不启动 | `ENABLE_NGINX=1` 启用 |
+
+- run.sh 的 `compose_extra_args()` 启动前组装 `--profile` 参数，`start/restart/stop/status` 均按相同规则执行。
+- 手动控制示例：`ENABLE_WORKER=1 ./run.sh start`、`ENABLE_NGINX=1 ./run.sh start`、`docker compose --profile celery up -d`。
+- 当前项目无 Celery 任务，默认启动 db + backend + frontend 三个服务，redis/worker/nginx 按需启用。
+
 ### 10.8 已知限制
 
 - 脚本为 bash 实现，依赖 Linux 环境（`/proc`、`ss`/`lsof`、`nohup`）；Windows 本地（无 WSL）无法直接执行，需在服务器或 WSL 环境使用。
 - 脚本依赖 bash 语法（`read -p`、`local` 等）；已做 sh→bash 自动重执行兼容，但系统必须已安装 bash。
 - `stop` / `status` 依赖 `.run_mode` 记忆文件判断模式；若从未运行过则默认走传统方式分支。
 - `docker compose` 方式未做版本号强校验，依赖本机已安装 docker compose v2 或 v1 的 `docker-compose`。
+- Celery 任务检测基于源码 grep（`@shared_task`/`@app.task`/`.delay()`/`apply_async`），若任务写在非标准位置可能漏检；此时可用 `ENABLE_WORKER=1` 强制启用。
+- `pgvector/pgvector:pg18` 与 `postgres:15-alpine` 数据卷不兼容，切换数据库镜像需重建 `pgdata` 卷。
 
 ---
 
@@ -726,7 +754,7 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 | `frontend/src/components/HealthCalendar.tsx` | 健康记录日历组件（新增） |
 | `frontend/src/components/CopyButton.tsx` | 复制按钮组件（新增） |
 | `frontend/src/pages/BabyShoppingDetailPage.tsx` | 宝宝购物清单详情页（新增） |
-| `docker-compose.yml` | 5 服务编排（db/redis/backend/worker/frontend + nginx） |
+| `docker-compose.yml` | 6 服务编排（db/backend/frontend 必选 + redis/worker/nginx 可选 profiles） |
 | `nginx/nginx.conf` | 反向代理（HTTP 80） |
 | `nginx/mengya_ssl.conf` | 反向代理（HTTPS，Docker 编排内使用） |
 | `run.sh` | 服务管理脚本（start/stop/restart/status/add_nginx，支持 docker/local 双模式；无参数仅提示用法并退出，兼容 sh 执行；2026-09-10 重构） |

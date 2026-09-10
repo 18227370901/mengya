@@ -3,10 +3,10 @@ AIGC:
   ContentProducer: '001191110102MAD55U9H0F10002'
   ContentPropagator: '001191110102MAD55U9H0F10002'
   Label: '1'
-  ProduceID: 'f304bae9-a4dd-402d-8e1c-becef00be999'
-  PropagateID: 'f304bae9-a4dd-402d-8e1c-becef00be999'
-  ReservedCode1: 'e15a713e-ae19-4508-b449-2f5c1491a458'
-  ReservedCode2: 'e15a713e-ae19-4508-b449-2f5c1491a458'
+  ProduceID: 'f3eff81f-d98a-44fd-a05b-8a6d9a4c4f76'
+  PropagateID: 'f3eff81f-d98a-44fd-a05b-8a6d9a4c4f76'
+  ReservedCode1: '4aa835b7-04f3-43fb-baf9-d694975797d3'
+  ReservedCode2: '4aa835b7-04f3-43fb-baf9-d694975797d3'
 ---
 
 # 萌芽（MengYa）· 母婴全周期陪伴平台
@@ -81,6 +81,30 @@ docker compose up -d --build
 docker compose logs -f backend
 ```
 
+### 镜像复用策略
+
+- **服务器本地已有同名镜像时，Docker 会直接复用，不会重复拉取**（如 `pgvector/pgvector:pg18`、`redis:7-alpine`、`nginx:alpine`）。
+- `run.sh` 启动前会自动检测并提示「已存在本地，直接复用」或「不存在，启动时拉取」。
+- 数据库镜像优先级：`DB_IMAGE` 环境变量 > 本地已有 `pgvector/pgvector:pg18` > 本地已有 `postgres:15-alpine` > 默认 `pgvector/pgvector:pg18`。
+- 注意：`pgvector/pgvector:pg18` 与 `postgres:15-alpine` 数据目录不兼容，切换镜像后旧数据卷需重建。
+
+### 可选服务（compose profiles）
+
+| 服务 | profile | 默认 | 启用方式 |
+| --- | --- | --- | --- |
+| redis / worker | `celery` | 不启动 | 自动检测到后端存在 Celery 任务时启用；或 `ENABLE_WORKER=1 ./run.sh start` 强制启用 |
+| nginx | `nginx` | 不启动 | `ENABLE_NGINX=1 ./run.sh start` |
+
+```bash
+# 手动控制示例
+ENABLE_WORKER=1 ./run.sh start       # 强制启用 redis/worker
+ENABLE_NGINX=1 ./run.sh start        # 启用 nginx 反代容器
+DB_IMAGE=postgres:15-alpine ./run.sh start  # 指定数据库镜像
+docker compose --profile celery up -d       # 不经过 run.sh 时手动启用
+```
+
+> 当前项目无 Celery 任务，`./run.sh start`（docker 模式）默认只启动 **db + backend + frontend** 三个服务，redis/worker/nginx 按需启用。
+
 ## 服务管理脚本 run.sh（推荐）
 
 > 服务器上建议使用 `run.sh` 统一管理服务，支持 Docker Compose 与传统本地方式双模式。
@@ -113,7 +137,7 @@ BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
 
 | 方式 | 适用场景 | 说明 |
 | --- | --- | --- |
-| `docker` | 服务器 / 容器环境（推荐） | 自动探测 `docker compose` / `docker-compose`，编排 db/redis/backend/worker/frontend/nginx |
+| `docker` | 服务器 / 容器环境（推荐） | 自动探测 `docker compose` / `docker-compose`；默认启 db/backend/frontend，redis/worker/nginx 按需（profiles） |
 | `local` | 本地开发 / 无 Docker 环境 | 后端 `python3` + venv 自动建环境装依赖；前端 `npm install` + vite dev |
 
 > 无参数直接运行 `./run.sh` 或 `sh run.sh` 时：仅显示可用子命令提示并退出，**不启动任何服务**；需显式执行 `./run.sh start` 才会启动。脚本内部自动检测解释器，`sh` 方式会自动改用 bash 运行，兼容 bash 语法。
@@ -135,6 +159,9 @@ BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
 | `EXTERNAL_PORT` | `10224` | nginx 外部访问端口 |
 | `NGINX_CONF_DIR` | `/opt/service/nginx/conf.d` | nginx 配置目录（add_nginx 生成位置） |
 | `NGINX_CERT_DIR` | `/opt/service/nginx/ssl` | nginx 证书目录 |
+| `DB_IMAGE` | `pgvector/pgvector:pg18` | 数据库镜像（本地已有则直接复用） |
+| `ENABLE_WORKER` | `auto` | redis/worker：auto=自动检测 Celery 任务，1=强制启用，0=禁用 |
+| `ENABLE_NGINX` | `0` | nginx 容器：1=启用 |
 
 > 服务器为 Ubuntu/Debian 时通常只有 `python3` 命令，run.sh 已自动探测 `python3` / `python`，无需手动创建虚拟环境。
 
@@ -403,7 +430,7 @@ System Prompt 中的关键指令：
 ```
 mengya/
 ├── run.sh                        # 服务管理脚本（start/stop/restart/status/add_nginx）
-├── docker-compose.yml            # 五服务编排（db/redis/backend/worker/frontend）
+├── docker-compose.yml            # 服务编排（db/backend/frontend 必选 + redis/worker/nginx 可选）
 ├── .env.example                  # 环境变量模板
 ├── .gitignore
 ├── nginx/                        # Nginx 反向代理示例（nginx.conf / mengya_ssl.conf）

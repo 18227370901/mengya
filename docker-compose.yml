@@ -1,8 +1,30 @@
 version: "3.9"
 
+# ============================================================
+# 萌芽（mengya）平台 Docker Compose 编排
+#
+# 服务说明：
+#   db       数据库（默认 pgvector/pgvector:pg18，可用 DB_IMAGE 覆盖）
+#   backend  后端 API（Django + DRF）
+#   frontend 前端页面（React + Vite dev）
+#   redis    缓存/消息队列（可选，profile: celery）
+#   worker   Celery 异步任务（可选， profile: celery）
+#   nginx    SSL 反向代理（可选，profile: nginx）
+#
+# 可选服务默认不启动，由 run.sh 启动前自动检测/判断后按需附加：
+#   - redis/worker：检测到后端存在 Celery 任务时启用；ENABLE_WORKER=1/0 可强制控制
+#   - nginx：       需要时 ENABLE_NGINX=1 启用
+# 手动启动示例：
+#   docker compose --profile celery up -d
+#   docker compose --profile nginx up -d
+# ============================================================
+
 services:
   db:
-    image: postgres:15-alpine
+    # 默认使用 pgvector 镜像（支持向量检索，方便后续 AI 功能扩展）
+    # 若服务器本地已存在该镜像，Docker 会直接复用，不会重复拉取
+    # 可通过 DB_IMAGE 环境变量覆盖（如 DB_IMAGE=postgres:15-alpine）
+    image: ${DB_IMAGE:-pgvector/pgvector:pg18}
     container_name: mengya_db
     environment:
       POSTGRES_DB: mengya
@@ -19,6 +41,7 @@ services:
       retries: 10
 
   redis:
+    profiles: ["celery"]
     image: redis:7-alpine
     container_name: mengya_redis
     ports:
@@ -47,8 +70,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     command: >
       sh -c "python manage.py migrate &&
              python manage.py init_data --skip-if-exists &&
@@ -56,6 +77,7 @@ services:
              python manage.py runserver 0.0.0.0:8000"
 
   worker:
+    profiles: ["celery"]
     build: ./backend
     container_name: mengya_worker
     env_file:
@@ -82,6 +104,7 @@ services:
     command: npm run dev -- --host 0.0.0.0
 
   nginx:
+    profiles: ["nginx"]
     image: nginx:alpine
     container_name: mengya_nginx
     ports:
