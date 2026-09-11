@@ -11,8 +11,8 @@ AIGC:
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.7
-> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停；v1.6 更新：2026-09-10，修复 PG18 数据卷挂载点并补充挂载约定；v1.7 更新：2026-09-10，修复 Docker 容器内 Vite 代理跨容器寻址与 Django ALLOWED_HOSTS 配置，解决登录 500 与获取注册模式失败）
+> 文档版本：v1.8
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停；v1.6 更新：2026-09-10，修复 PG18 数据卷挂载点并补充挂载约定；v1.7 更新：2026-09-10，修复 Docker 容器内 Vite 代理跨容器寻址与 Django ALLOWED_HOSTS 配置，解决登录 500 与获取注册模式失败；v1.8 更新：2026-09-11，修复传统与容器部署下数据库连接/初始化失败报 500/400、SQLite 智能安全回退、PyJWT 秘钥规范化、run.sh 停止服务时子进程残留与 PID 不匹配问题）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
 > 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/解决方案设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
@@ -643,6 +643,38 @@ MODE 环境变量已设置 → 直接使用（校验取值）
      - `backend` 服务强制注入 `DJANGO_ALLOWED_HOSTS: "*"`（非插值默认值，防止被旧 .env 覆盖），并兼容 `ADMIN_USERNAME` / `ADMIN_PHONE`。
      - `backend` 启动命令补充 `init_fetal_stories` 种子数据初始化。
   4. `ensure_admin.py`：兼容读取 `ADMIN_USERNAME` 与 `ADMIN_PHONE`。
+
+#### ⑤ 传统部署与 Docker 部署下数据库未初始化/无法连接与进程停止残留修复（v1.8 新增）
+
+> 2026-09-11 修复传统部署与容器部署下数据库初始化、跨环境数据库连接与进程停止残留问题。
+
+- **问题现象**：
+  - 服务器及本地在传统方式（`MODE=local`）启动后，登录报错 `Request failed with status code 500`，点击立即注册报错 `无法获取注册模式，请检查网络后刷新页面重试`。
+  - Docker 容器部署在部分环境下登录报 500 或 400 Bad Request。
+  - 执行 `sh run.sh stop` 停止传统服务时，终端提示 `前端 Vite 未在运行（无有效 PID）`，但 5173 与 8000 端口仍被占用，子进程未停止成功。
+- **根本原因**：
+  1. **传统部署数据库迁移失败导致无表结构（500 根因）**：
+     - `run.sh` 中 `ensure_backend_deps` 将提示日志打印至 `stdout`，导致 `PYTHON=$(ensure_backend_deps "$PY_CMD")` 变量被多行日志文本污染，后续 Python 命令全部失效。
+     - `start_backend()` 未进入 `backend/` 目录直接执行 `manage.py`，且原使用 `2>/dev/null || true` 屏蔽了报错信息。导致 `migrate` 与 `init_data` 从未真正执行，数据库没有任何数据表。
+     - 前端访问注册页 `/api/auth/registration-mode/` 和登录页 `/api/auth/login/` 时，后端调用 `SystemSetting.get_settings()` 查询数据库，抛出 `OperationalError: no such table: core_systemsetting`，Django 触发 500 内部服务错误。
+  2. **跨环境 DATABASE_URL 配置冲突与无法连接（500 根因）**：
+     - 若宿主机或本地环境存在 `.env` 文件且配置了容器数据库地址 `DATABASE_URL=postgresql://...`，在宿主机非容器环境下无法解析 `db` 或本地未运行 PostgreSQL 服务。Django 尝试连接数据库超时/拒绝连接抛出异常，引发 500。
+  3. **进程终止逻辑缺陷与孤儿进程残留（stop 失败根因）**：
+     - `start_frontend` 写入 PID 文件的是 `npm` 命令的 PID，其 `/proc/$pid/cmdline` 匹配不到 `vite` 关键字，`pid_alive` 误判为不存活，导致 `stop_service` 找不到 PID 而直接跳过 kill。
+     - 原脚本仅对父进程发出 kill 信号，未自底向上遍历并终止子进程树，导致 Vite 开发服务器及 Django runserver 自动重载工作进程脱离父进程沦为孤儿进程，持续监听 5173 与 8000 端口。
+     - `stop_service` 缺少端口层面的兜底校验与强制清理。
+  4. **PyJWT 密钥长度警告与规范**：开发环境下默认密钥低于 32 字节引发 `InsecureKeyLengthWarning`。
+- **整改措施**：
+  1. `backend/config/settings.py`：
+     - **数据库智能安全回退**：对配置的 `DATABASE_URL` 进行域名解析与端口连通性双重探测（超时 1.5 秒）。若目标 PostgreSQL 无法解析或未连通（如宿主机传统模式、容器未启动），系统自动平滑回退至本地 SQLite (`BASE_DIR / "db.sqlite3"`)，彻底杜绝数据库连接异常引发的 500 崩溃。
+     - **JWT 密钥安全规范**：自动补齐密钥长度至 >= 32 字节，消除 PyJWT 安全警告。
+  2. `run.sh` 脚本核心重构：
+     - **日志流严格隔离**：`ensure_backend_deps` 内所有提示信息及 `pip install` 输出全部重定向至 `>&2`，保证 stdout 输出且仅输出唯一的 Python 可执行文件绝对路径；增加 Windows/Git Bash 虚拟环境路径兼容。
+     - **后端启动与数据初始化保障**：`start_backend()` 进入 `backend/` 目录执行，移除静默错误屏蔽，确保 `migrate`、`init_data`、`init_fetal_stories`、`ensure_admin` 依次完整执行，种子数据和管理员账号无缝就绪。
+     - **全进程树终止（`kill_pid_tree`）**：实现 `get_descendant_pids`，自底向上递归收集父子进程完整 PID 列表，统一终止并经多次探活兜底 `kill -9`，杜绝孤儿进程。
+     - **端口监听兜底清理**：`stop_service` 增加端口层面的占用检测，支持 `lsof`、`fuser`、`ss`、`netstat` 多种探测工具，发现端口残留时自动强杀占用进程。
+     - **直接启动 Vite 记录真实 PID**：优先调用 `node_modules/.bin/vite` 启动并记录真实 Vite PID，同时绑定 `0.0.0.0`。
+     - **智能停止与状态报告**：`stop` 命令智能适配 Docker 与 local 模式（或全量双清），`status` 准确标明端口外部占用状态并提示使用 `stop` 一键清理。
 
 ### 10.8 已知限制
 

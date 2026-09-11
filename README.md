@@ -38,7 +38,7 @@ python manage.py init_data
 python manage.py runserver 0.0.0.0:8000
 ```
 
-> 本地未配置 `DATABASE_URL` 时，settings 自动回退到 SQLite，无需 PostgreSQL。
+> **数据库智能自适应**：settings 启动时自动探测 `DATABASE_URL` 连通性。若未配置、或配置的目标 PostgreSQL 无法解析/未启动（如宿主机传统模式读取了含 `db` 主机名的配置），系统自动安全平滑回退至本地 SQLite（`backend/db.sqlite3`），杜绝因数据库未就绪引发 500。
 
 ### 前端
 

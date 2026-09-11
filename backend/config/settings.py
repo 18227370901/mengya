@@ -5,6 +5,7 @@ Django 配置 - 萌芽母婴平台
   2. 本地开发（python manage.py runserver，未配置 DATABASE_URL 时回退 SQLite）
 """
 import os
+import socket
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -16,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / ".env")
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-insecure-secret-key")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "mengya-dev-insecure-secret-key-32bytes!")
 DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() in ("1", "true", "yes")
 
 _env_hosts = os.getenv("DJANGO_ALLOWED_HOSTS", "").strip()
@@ -74,27 +75,44 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # ===== 数据库 =====
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+use_pg = False
 if DATABASE_URL:
     p = urlparse(DATABASE_URL)
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": p.path.lstrip("/"),
-            "USER": p.username,
-            "PASSWORD": p.password,
-            "HOST": p.hostname,
-            "PORT": p.port or 5432,
+    db_host = p.hostname or "localhost"
+    db_port = p.port or 5432
+    # 探测 PostgreSQL 目标地址与端口是否可连通（超时 1.5 秒）
+    # 若在非容器宿主机环境且配置了 db 主机名，或配置的 PostgreSQL 服务未启动，自动安全回退 SQLite
+    try:
+        ip = socket.gethostbyname(db_host)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1.5)
+        res = s.connect_ex((ip, int(db_port)))
+        s.close()
+        if res == 0:
+            use_pg = True
+    except Exception:
+        use_pg = False
+
+    if use_pg:
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": p.path.lstrip("/"),
+                "USER": p.username,
+                "PASSWORD": p.password,
+                "HOST": db_host,
+                "PORT": db_port,
+            }
         }
-    }
-else:
+
+if not use_pg:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
-
 # ===== 认证 / JWT =====
 AUTH_USER_MODEL = "core.User"
 
@@ -116,7 +134,7 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=12),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
     "AUTH_HEADER_TYPES": ("Bearer",),
-    "SIGNING_KEY": os.getenv("JWT_SECRET_KEY", SECRET_KEY),
+    "SIGNING_KEY": (lambda k: k.ljust(32, "!") if len(k) < 32 else k)(os.getenv("JWT_SECRET_KEY", "") or SECRET_KEY),
 }
 
 SPECTACULAR_SETTINGS = {

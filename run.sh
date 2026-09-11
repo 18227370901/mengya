@@ -104,36 +104,88 @@ port_in_use() {
     return 1
 }
 
+# 获取占用指定 TCP 端口的 PID 列表
+get_port_pids() {
+    local port="$1"
+    local pids=""
+    if command -v lsof >/dev/null 2>&1; then
+        pids=$(lsof -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
+    fi
+    if [ -z "$pids" ] && command -v fuser >/dev/null 2>&1; then
+        pids=$(fuser "$port/tcp" 2>/dev/null || true)
+    fi
+    if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
+        pids=$(ss -lptn "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
+    fi
+    if [ -z "$pids" ] && command -v netstat >/dev/null 2>&1; then
+        pids=$(netstat -tlpn 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d/ -f1 | grep -oE '[0-9]+' | sort -u || true)
+    fi
+    echo "$pids"
+}
+
+# 获取指定 PID 的所有子代与后代 PID
+get_descendant_pids() {
+    local parent="$1"
+    local children=""
+    if command -v pgrep >/dev/null 2>&1; then
+        children=$(pgrep -P "$parent" 2>/dev/null || true)
+    elif [ -d /proc ]; then
+        children=$(awk -v p="$parent" '$4 == p {print $1}' /proc/[0-9]*/stat 2>/dev/null | sort -u || true)
+    fi
+    for child in $children; do
+        get_descendant_pids "$child"
+        echo "$child"
+    done
+}
+
+# 停止指定 PID 及其所有子进程（自底向上收集并终止，杜绝孤儿进程残留）
+kill_pid_tree() {
+    local pid="$1"
+    [ -z "$pid" ] && return 0
+    local all_pids
+    all_pids="$(get_descendant_pids "$pid") $pid"
+    for p in $all_pids; do
+        kill "$p" 2>/dev/null || true
+    done
+    for _ in $(seq 1 6); do
+        local any_alive=0
+        for p in $all_pids; do
+            if kill -0 "$p" 2>/dev/null; then
+                any_alive=1
+                break
+            fi
+        done
+        [ "$any_alive" = "0" ] && break
+        sleep 0.5
+    done
+    for p in $all_pids; do
+        if kill -0 "$p" 2>/dev/null; then
+            kill -9 "$p" 2>/dev/null || true
+        fi
+    done
+}
+
 pid_alive() {
     local pid="$1"
-    local keyword="$2"
     [ -z "$pid" ] && return 1
-    [ ! -d "/proc/$pid" ] && return 1
-    if [ -n "$keyword" ]; then
-        local cmdline
-        cmdline=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
-        echo "$cmdline" | grep -q "$keyword" || return 1
-    fi
-    return 0
+    kill -0 "$pid" 2>/dev/null
 }
 
 read_pid() {
     local pidfile="$1"
-    local keyword="$2"
     local pid=""
     if [ -f "$pidfile" ]; then
         pid=$(cat "$pidfile" 2>/dev/null | tr -d '[:space:]' || true)
     fi
-    if pid_alive "$pid" "$keyword"; then
+    if [ -n "$pid" ] && pid_alive "$pid"; then
         echo "$pid"
     else
         echo ""
     fi
 }
 
-get_backend_pid() { read_pid "$BACKEND_PID_FILE" "manage.py runserver"; }
-get_frontend_pid() { read_pid "$FRONTEND_PID_FILE" "vite"; }
-
+get_backend_pid() { read_pid "$BACKEND_PID_FILE"; }
+get_frontend_pid() { read_pid "$FRONTEND_PID_FILE"; }
 # 探测可用的 python 命令（优先 python3，兼容 python）
 detect_python() {
     if command -v python3 >/dev/null 2>&1; then
@@ -452,27 +504,33 @@ status_docker() {
 # ===== 传统方式：检查并安装后端依赖 =====
 ensure_backend_deps() {
     local PY_CMD="$1"
-    echo "  ==> 检查后端 Python 依赖..."
+    echo "  ==> 检查后端 Python 依赖..." >&2
 
     # 1. 确保虚拟环境存在
     if [ ! -d "$BACKEND_DIR/.venv" ] && [ ! -d "$BACKEND_DIR/venv" ]; then
-        echo "  [依赖] 未找到虚拟环境，创建 .venv（使用 $PY_CMD）..."
-        (cd "$BACKEND_DIR" && "$PY_CMD" -m venv .venv)
+        echo "  [提示] 未找到虚拟环境，正在创建 .venv（使用 $PY_CMD）..." >&2
+        (cd "$BACKEND_DIR" && "$PY_CMD" -m venv .venv >&2)
     fi
 
-    # 2. 确定 venv 中的 python
+    # 2. 确定 venv 中的 python（兼容 Linux/Mac 与 Windows/Git Bash）
     local VENV_PY=""
     if [ -d "$BACKEND_DIR/.venv/bin" ]; then
         VENV_PY="$BACKEND_DIR/.venv/bin/python"
     elif [ -d "$BACKEND_DIR/venv/bin" ]; then
         VENV_PY="$BACKEND_DIR/venv/bin/python"
+    elif [ -f "$BACKEND_DIR/.venv/Scripts/python" ]; then
+        VENV_PY="$BACKEND_DIR/.venv/Scripts/python"
+    elif [ -f "$BACKEND_DIR/.venv/Scripts/python.exe" ]; then
+        VENV_PY="$BACKEND_DIR/.venv/Scripts/python.exe"
+    elif [ -f "$BACKEND_DIR/venv/Scripts/python.exe" ]; then
+        VENV_PY="$BACKEND_DIR/venv/Scripts/python.exe"
     fi
     [ -z "$VENV_PY" ] && VENV_PY="$PY_CMD"
 
-    # 3. 校验依赖：pip check + 关键模块导入
+    # 3. 校验依赖（pip check + 关键模块导入）
     local need_install=0
     if ! "$VENV_PY" -m pip check >/dev/null 2>&1; then
-        echo "  [依赖] pip check 未通过，将重新安装 requirements.txt..."
+        echo "  [提示] pip check 未通过，尝试重新安装 requirements.txt..." >&2
         need_install=1
     fi
     local missing=""
@@ -482,14 +540,14 @@ ensure_backend_deps() {
         fi
     done
     if [ -n "$missing" ]; then
-        echo "  [依赖] 检测到缺失模块:$missing，将安装 requirements.txt..."
+        echo "  [提示] 检测到缺失模块:$missing，正在安装 requirements.txt..." >&2
         need_install=1
     fi
 
     if [ "$need_install" = "1" ]; then
-        (cd "$BACKEND_DIR" && "$VENV_PY" -m pip install -r requirements.txt)
+        (cd "$BACKEND_DIR" && "$VENV_PY" -m pip install -r requirements.txt >&2)
     else
-        echo "  [依赖] 后端依赖完整，无需安装。"
+        echo "  [提示] 后端依赖校验通过，无需重新安装。" >&2
     fi
 
     echo "$VENV_PY"
@@ -500,7 +558,7 @@ start_backend() {
     echo "==> 启动后端服务（端口 $BACKEND_PORT，传统方式）"
     if port_in_use "$BACKEND_PORT"; then
         echo "  [提示] 端口 $BACKEND_PORT 已被占用，跳过后端启动"
-        echo "         请确认占用进程是否为旧实例，必要时先执行 ./run.sh stop"
+        echo "         请确认占用进程是否为本实例，必要时先执行 ./run.sh stop"
         return 1
     fi
 
@@ -514,19 +572,22 @@ start_backend() {
     local PYTHON
     PYTHON=$(ensure_backend_deps "$PY_CMD")
 
-    echo "  执行数据库迁移..."
-    "$PYTHON" manage.py migrate --noinput 2>/dev/null || true
-    echo "  初始化种子数据..."
-    "$PYTHON" manage.py init_data --skip-if-exists 2>/dev/null || true
-    "$PYTHON" manage.py init_fetal_stories --skip-if-exists 2>/dev/null || true
-    "$PYTHON" manage.py ensure_admin 2>/dev/null || true
-
+    cd "$BACKEND_DIR"
     mkdir -p "$LOG_DIR" "$PID_DIR"
-    nohup "$PYTHON" manage.py runserver 127.0.0.1:$BACKEND_PORT \
+
+    echo "  执行数据库迁移..."
+    "$PYTHON" manage.py migrate --noinput
+    echo "  初始化种子数据..."
+    "$PYTHON" manage.py init_data --skip-if-exists
+    "$PYTHON" manage.py init_fetal_stories --skip-if-exists
+    "$PYTHON" manage.py ensure_admin
+
+    nohup "$PYTHON" manage.py runserver 0.0.0.0:$BACKEND_PORT \
         >> "$LOG_DIR/backend.log" 2>&1 &
     echo $! > "$BACKEND_PID_FILE"
     echo "  后端 PID: $(cat "$BACKEND_PID_FILE")"
     echo "  日志: $LOG_DIR/backend.log"
+    cd "$SCRIPT_DIR"
 }
 
 # ===== 传统方式：检查并安装前端依赖 =====
@@ -556,12 +617,20 @@ start_frontend() {
 
     ensure_frontend_deps
 
+    cd "$FRONTEND_DIR"
     mkdir -p "$LOG_DIR" "$PID_DIR"
-    nohup npm run dev -- --port $FRONTEND_PORT \
-        >> "$LOG_DIR/frontend.log" 2>&1 &
+    local VITE_BIN="./node_modules/.bin/vite"
+    if [ -f "$VITE_BIN" ]; then
+        nohup "$VITE_BIN" --port "$FRONTEND_PORT" --host 0.0.0.0 \
+            >> "$LOG_DIR/frontend.log" 2>&1 &
+    else
+        nohup npm run dev -- --port "$FRONTEND_PORT" --host 0.0.0.0 \
+            >> "$LOG_DIR/frontend.log" 2>&1 &
+    fi
     echo $! > "$FRONTEND_PID_FILE"
     echo "  前端 PID: $(cat "$FRONTEND_PID_FILE")"
     echo "  日志: $LOG_DIR/frontend.log"
+    cd "$SCRIPT_DIR"
 }
 
 # ===== 停止单个服务 =====
@@ -569,26 +638,42 @@ stop_service() {
     local pid="$1"
     local name="$2"
     local pidfile="$3"
-    if [ -n "$pid" ]; then
+    local port="$4"
+    local stopped=0
+
+    if [ -n "$pid" ] && pid_alive "$pid"; then
         echo "  ==> 停止 $name (PID $pid)"
-        kill "$pid" 2>/dev/null || true
-        for _ in $(seq 1 10); do
-            pid_alive "$pid" "" || break
-            sleep 0.5
-        done
-        kill -9 "$pid" 2>/dev/null || true
-        rm -f "$pidfile"
+        kill_pid_tree "$pid"
+        stopped=1
+    fi
+    rm -f "$pidfile"
+
+    # 兜底：若端口仍被占用，查找该端口上的进程并强制终止
+    if [ -n "$port" ] && port_in_use "$port"; then
+        local port_pids
+        port_pids=$(get_port_pids "$port")
+        if [ -n "$port_pids" ]; then
+            echo "  ==> 检测到端口 $port 仍有残留进程 (PID $port_pids)，正在清理..."
+            for p in $port_pids; do
+                kill_pid_tree "$p"
+            done
+            stopped=1
+        fi
+    fi
+
+    if [ "$stopped" = "1" ]; then
+        echo "  $name 已成功停止"
     else
-        echo "  $name 未在运行（无有效 PID）"
+        echo "  $name 未在运行（无有效 PID 或端口监听）"
     fi
 }
 
 # ===== 传统方式：停止全部 =====
 stop_local_all() {
     echo "==> 停止服务（传统方式）"
-    stop_service "$(get_backend_pid)" "后端 Django" "$BACKEND_PID_FILE"
-    stop_service "$(get_frontend_pid)" "前端 Vite" "$FRONTEND_PID_FILE"
-    echo "  服务已停止"
+    stop_service "$(get_backend_pid)" "后端 Django" "$BACKEND_PID_FILE" "$BACKEND_PORT"
+    stop_service "$(get_frontend_pid)" "前端 Vite" "$FRONTEND_PID_FILE" "$FRONTEND_PORT"
+    echo "  传统服务停止操作完成"
 }
 
 # ===== 传统方式：状态查询 =====
@@ -600,22 +685,22 @@ show_status_local() {
     bp=$(get_backend_pid)
     fp=$(get_frontend_pid)
 
-    echo "  后端 Django  : $([ -n "$bp" ] && echo "运行中 (PID $bp, 端口 $BACKEND_PORT)" || echo "未运行")"
-    echo "  前端 Vite    : $([ -n "$fp" ] && echo "运行中 (PID $fp, 端口 $FRONTEND_PORT)" || echo "未运行")"
+    echo "  后端 Django  : $([ -n "$bp" ] && echo "运行中 (PID $bp, 端口 $BACKEND_PORT)" || (port_in_use "$BACKEND_PORT" && echo "端口已占用 (外部进程)" || echo "未运行"))"
+    echo "  前端 Vite    : $([ -n "$fp" ] && echo "运行中 (PID $fp, 端口 $FRONTEND_PORT)" || (port_in_use "$FRONTEND_PORT" && echo "端口已占用 (外部进程)" || echo "未运行"))"
     echo "  nginx 配置   : $([ -f "$NGINX_CONF" ] && echo "已生成 ($NGINX_CONF)" || echo "未生成")"
     echo "  日志目录     : $LOG_DIR"
     echo ""
 
     local note=0
-    if port_in_use "$BACKEND_PORT"; then
-        echo "  [提示] 端口 $BACKEND_PORT 有进程监听，但不在本脚本管理范围内（PID 文件不匹配）"
+    if [ -z "$bp" ] && port_in_use "$BACKEND_PORT"; then
+        echo "  [提示] 端口 $BACKEND_PORT 有进程监听，但 PID 文件不匹配（可用 ./run.sh stop 清理）"
         note=1
     fi
-    if port_in_use "$FRONTEND_PORT"; then
-        echo "  [提示] 端口 $FRONTEND_PORT 有进程监听，但不在本脚本管理范围内"
+    if [ -z "$fp" ] && port_in_use "$FRONTEND_PORT"; then
+        echo "  [提示] 端口 $FRONTEND_PORT 有进程监听，但 PID 文件不匹配（可用 ./run.sh stop 清理）"
         note=1
     fi
-    [ "$note" = "1" ] && echo "         如为残留进程，请手动排查或使用 restart 重启。"
+    [ "$note" = "1" ] && echo "         如为残留进程，执行 ./run.sh stop 将自动清理。"
     echo ""
 }
 
@@ -658,11 +743,20 @@ case "$CMD" in
         fi
         ;;
     stop)
-        last=$(get_last_mode)
-        if [ "$last" = "docker" ]; then
+        if [ "$MODE" = "docker" ]; then
             stop_docker
-        else
+        elif [ "$MODE" = "local" ]; then
             stop_local_all
+        else
+            last=$(get_last_mode)
+            if [ "$last" = "docker" ]; then
+                stop_docker
+            elif [ "$last" = "local" ]; then
+                stop_local_all
+            else
+                stop_docker 2>/dev/null || true
+                stop_local_all
+            fi
         fi
         ;;
     restart)
@@ -707,3 +801,4 @@ case "$CMD" in
         exit 1
         ;;
 esac
+
