@@ -603,7 +603,8 @@ start_backend() {
     "$PYTHON" manage.py init_fetal_stories --skip-if-exists
     "$PYTHON" manage.py ensure_admin
 
-    nohup "$PYTHON" manage.py runserver 0.0.0.0:$BACKEND_PORT \
+    # 绑定 127.0.0.1 回环地址，仅供本机前端代理转发访问，不对公网开放 8000 端口
+    nohup "$PYTHON" manage.py runserver 127.0.0.1:$BACKEND_PORT \
         >> "$LOG_DIR/backend.log" 2>&1 &
     echo $! > "$BACKEND_PID_FILE"
     echo "  后端 PID: $(cat "$BACKEND_PID_FILE")"
@@ -790,7 +791,8 @@ case "$CMD" in
             show_status_local
             echo "============================================"
             echo "  启动完成！"
-            echo "  内部访问: http://localhost:$BACKEND_PORT (后端) / http://localhost:$FRONTEND_PORT (前端)"
+            echo "  访问地址: http://localhost:$FRONTEND_PORT (前端页面，内置反代至后端接口)"
+            echo "  后端服务: 仅监听 127.0.0.1:$BACKEND_PORT (不对外暴露，保护系统安全)"
             echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
             echo "============================================"
         fi
@@ -832,7 +834,8 @@ case "$CMD" in
             show_status_local
             echo "============================================"
             echo "  重启完成！"
-            echo "  内部访问: http://localhost:$BACKEND_PORT / http://localhost:$FRONTEND_PORT"
+            echo "  访问地址: http://localhost:$FRONTEND_PORT (前端页面，内置反代至后端接口)"
+            echo "  后端服务: 仅监听 127.0.0.1:$BACKEND_PORT (不对外暴露，保护系统安全)"
             echo "  管理员账号: $ADMIN_USERNAME / $ADMIN_PASSWORD"
             echo "============================================"
         fi

@@ -50,12 +50,12 @@ npm run dev        # 开发模式 http://localhost:5173
 npm run build && npm run preview   # 预览构建产物
 ```
 
-### 访问地址
+### 访问地址与端口暴露说明
 
 | 服务 | 地址 | 说明 |
 | --- | --- | --- |
-| 前端页面 | http://localhost:5173 | 主站 |
-| 后端 API | http://localhost:8000/api/ | RESTful 接口 |
+| 前端页面（唯一对外入口） | http://localhost:5173 | 主站页面（内置反向代理 `/api`，外部网络/安全组只需开放此端口） |
+| 后端 API（内部服务） | http://127.0.0.1:8000/api/ | 仅监听本地回环/容器内部网络，不对公网暴露，保障接口与数据安全 |
 
 ### 演示账号
 

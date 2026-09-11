@@ -35,8 +35,9 @@ services:
       # 数据会自动放入镜像内置的子目录（如 18/docker），以支持 pg_upgrade --link 平滑升级
       # 若挂载到 /var/lib/postgresql/data，PG18 镜像会判定为「unused mount/volume」并拒绝启动（容器 exited 1）
       - pgdata:/var/lib/postgresql
-    ports:
-      - "5433:5432"
+    # 仅在内部容器网络暴露端口，不对宿主机暴露 5433，保障数据库安全
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mengya -d mengya"]
       interval: 5s
@@ -47,8 +48,9 @@ services:
     profiles: ["celery"]
     image: redis:7-alpine
     container_name: mengya_redis
-    ports:
-      - "6380:6379"
+    # 仅在内部容器网络暴露端口，不对宿主机暴露 6380
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -70,8 +72,9 @@ services:
       ADMIN_NICKNAME: ${ADMIN_NICKNAME:-管理员}
     volumes:
       - ./backend:/app
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+    # 仅在内部容器网络暴露端口，前端通过 http://backend:8000 代理转发，不对宿主机公网暴露 8000
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
