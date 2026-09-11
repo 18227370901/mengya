@@ -128,9 +128,11 @@ ADMIN_USERNAME=admin_yy ADMIN_PASSWORD=mypassword MODE=local ./run.sh start
 BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
 
 # 其他命令
-./run.sh stop          # 停止全部服务
+./run.sh stop          # 停止全部服务（自动清理端口与残留进程）
 ./run.sh restart       # 重启全部服务
-./run.sh status        # 查看服务状态
+./run.sh status        # 查看服务状态（优先响应 MODE=docker 或 MODE=local，未指定时自适应）
+MODE=docker ./run.sh status  # 显式查看 Docker 容器状态
+MODE=local ./run.sh status   # 显式查看本地传统进程状态
 ./run.sh add_nginx     # 生成 nginx SSL 配置（生成到 /opt/service/nginx/conf.d/）
 ./run.sh help          # 帮助
 ```

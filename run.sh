@@ -400,11 +400,25 @@ has_celery_tasks() {
     grep -rqE "@(shared_task|app\.task)|\.delay\(|apply_async" "$BACKEND_DIR" --include="*.py" 2>/dev/null
 }
 
+# 检测当前 docker compose 是否支持 --profile 选项
+compose_supports_profiles() {
+    local compose="$1"
+    [ -z "$compose" ] && return 1
+    $compose --help 2>&1 | grep -q -- "--profile"
+}
+
 # 组装 docker compose 附加参数（profiles + 环境变量）
 #   - redis/worker：检测到 Celery 任务则附加 celery profile；ENABLE_WORKER=1/0 可强制
 #   - nginx：       ENABLE_NGINX=1 时附加 nginx profile
 # 注意：提示信息输出到 stderr，仅将 --profile 参数输出到 stdout（供命令替换捕获）
 compose_extra_args() {
+    local compose
+    compose=$(compose_cmd)
+    if [ -n "$compose" ] && ! compose_supports_profiles "$compose"; then
+        echo "  [Docker] 当前 docker compose 版本不支持 --profile，跳过 profile 参数" >&2
+        return 0
+    fi
+
     local args=""
     local enable_worker="${ENABLE_WORKER:-auto}"
 
@@ -457,7 +471,8 @@ start_docker() {
     args=$(compose_extra_args)
 
     cd "$SCRIPT_DIR"
-    DB_IMAGE="$(choose_db_image)" $compose up -d --build $args
+    # 注意：--profile 是 docker compose 全局参数，必须放在子命令（up）之前
+    DB_IMAGE="$(choose_db_image)" $compose $args up -d --build
     echo ""
     echo "  服务已启动，查看状态: $compose ps"
     echo "  查看日志: $compose logs -f"
@@ -473,8 +488,9 @@ stop_docker() {
     echo "==> 停止全部服务（docker compose 方式）"
     cd "$SCRIPT_DIR"
     local args
-    args=$(compose_extra_args)
-    $compose down $args
+    args=$(compose_extra_args 2>/dev/null || true)
+    # 注意：停止服务时附加 --remove-orphans 彻底清理，全局参数置于 down 之前
+    $compose $args down --remove-orphans
 }
 
 restart_docker() {
@@ -489,7 +505,8 @@ restart_docker() {
     local args
     args=$(compose_extra_args)
     cd "$SCRIPT_DIR"
-    DB_IMAGE="$(choose_db_image)" $compose up -d --build --force-recreate $args
+    # 注意：--profile 是 docker compose 全局参数，必须放在子命令（up）之前
+    DB_IMAGE="$(choose_db_image)" $compose $args up -d --build --force-recreate
 }
 
 status_docker() {
@@ -501,9 +518,8 @@ status_docker() {
     fi
     echo "==> docker compose 服务状态"
     cd "$SCRIPT_DIR"
-    local args
-    args=$(compose_extra_args)
-    $compose ps $args
+    # 注意：docker compose ps 用于列出容器状态，无需且不可附带 --profile 标志
+    $compose ps
 }
 
 # ===== 传统方式：检查并安装后端依赖 =====
@@ -822,11 +838,25 @@ case "$CMD" in
         fi
         ;;
     status)
-        last=$(get_last_mode)
-        if [ "$last" = "docker" ]; then
+        target_mode="${MODE:-}"
+        if [ -z "$target_mode" ]; then
+            target_mode=$(get_last_mode)
+        fi
+
+        if [ "$target_mode" = "docker" ]; then
             status_docker
-        else
+        elif [ "$target_mode" = "local" ]; then
             show_status_local
+        else
+            # 未明确指定且无记录时，智能判断
+            local_compose=$(compose_cmd)
+            if [ -f "$BACKEND_PID_FILE" ] || [ -f "$FRONTEND_PID_FILE" ] || port_in_use "$BACKEND_PORT" || port_in_use "$FRONTEND_PORT"; then
+                show_status_local
+            elif [ -n "$local_compose" ] && (cd "$SCRIPT_DIR" && $local_compose ps -q 2>/dev/null | grep -q .); then
+                status_docker
+            else
+                show_status_local
+            fi
         fi
         ;;
     add_nginx)

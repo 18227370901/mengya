@@ -11,8 +11,8 @@ AIGC:
 
 # 萌芽（mengya）母婴全周期平台 —— 项目深度调研与架构评估文档
 
-> 文档版本：v1.9
-> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停；v1.6 更新：2026-09-10，修复 PG18 数据卷挂载点并补充挂载约定；v1.7 更新：2026-09-10，修复 Docker 容器内 Vite 代理跨容器寻址与 Django ALLOWED_HOSTS 配置，解决登录 500 与获取注册模式失败；v1.8 更新：2026-09-11，修复传统与容器部署下数据库连接/初始化失败报 500/400、SQLite 智能安全回退、PyJWT 秘钥规范化、run.sh 停止服务时子进程残留与 PID 不匹配问题；v1.9 更新：2026-09-11，重构管理员账号管理逻辑为单一自定义管理员、启动时清理历史管理员账号并保护普通用户、完善 run.sh 进程三维度定位与端口彻底停止机制、增加后端登录接口异常容错防护）
+> 文档版本：v1.10
+> 调研日期：2026-09-08（v1.1 更新：2026-09-10，补充全站优化与新增模块；v1.2 更新：2026-09-10，补充 run.sh 服务管理脚本与部署方式；v1.3 更新：2026-09-10，补充 run.sh 无参数执行与 sh 兼容性修复；v1.4 更新：2026-09-10，无参数行为改为仅提示并退出；v1.5 更新：2026-09-10，Docker 镜像复用策略与可选服务按需启停；v1.6 更新：2026-09-10，修复 PG18 数据卷挂载点并补充挂载约定；v1.7 更新：2026-09-10，修复 Docker 容器内 Vite 代理跨容器寻址与 Django ALLOWED_HOSTS 配置，解决登录 500 与获取注册模式失败；v1.8 更新：2026-09-11，修复传统与容器部署下数据库连接/初始化失败报 500/400、SQLite 智能安全回退、PyJWT 秘钥规范化、run.sh 停止服务时子进程残留与 PID 不匹配问题；v1.9 更新：2026-09-11，重构管理员账号管理逻辑为单一自定义管理员、启动时清理历史管理员账号并保护普通用户、完善 run.sh 进程三维度定位与端口彻底停止机制、增加后端登录接口异常容错防护；v1.10 更新：2026-09-11，修复 run.sh 中 Docker Compose 全局参数 --profile 放置位置引起的 unknown flag 语法错误、精简 status_docker 容器状态查询、增加 compose_supports_profiles 兼容性探测、修复 status 子命令优先响应 MODE 环境变量）
 > 调研对象：`C:\Users\cheng\.local\share\TeleAgent\TeleAgent的工作空间\mengya`
 > 文档性质：项目现状全面调研（Survey），非改造方案；为后续 PSD（产品/解决方案设计）阶段提供事实基础与决策输入
 > 角色定位：企业级软件架构、信息安全与领域驱动设计视角
@@ -704,11 +704,32 @@ MODE 环境变量已设置 → 直接使用（校验取值）
      - 聚合全部相关 PID 及其完整子孙进程树（`get_descendant_pids`），先发 `SIGTERM`，超时强制 `kill -9`，并循环校验等待端口彻底释放。
      - `stop` 子命令增加本地残留检查：无论何种模式下执行，只要本地 PID 文件存在或 8000/5173 端口被占用，均自动触发彻底清理。
 
+#### ⑦ Docker Compose 全局参数语法规范与 status 子命令模式分发修复（v1.10 新增）
+
+> 2026-09-11 修复在 Linux 服务器上执行 `MODE=docker sh run.sh status` 或 `MODE=local sh run.sh status` 时报错 `unknown flag: --profile` 的问题。
+
+- **问题现象与原因分析**：
+  - **Docker Compose CLI 语法位置错误**：在 Docker Compose 规范中，`--profile` 属于全局主命令参数（格式：`docker compose [GLOBAL_OPTIONS] COMMAND [ARGS]`），绝非 `ps`、`down` 等子命令的私有选项。原 `run.sh` 脚本将 `$args` 拼装在子命令之后（如 `$compose ps $args`），导致 Docker CLI 解析 `ps` 参数时遇到不认识的 `--profile` 抛出 `unknown flag: --profile`。
+  - **status 阶段冗余逻辑**：原 `status_docker` 会重新执行 `compose_extra_args` 检测 Celery/Nginx，向终端输出与状态查看无关的提示，并将 `--profile` 传给 `ps`。实际上 `docker compose ps` 专用于罗列项目容器，无需也不应附加 profile 过滤参数。
+  - **status 子命令忽略 `MODE` 环境变量**：原 `run.sh` 的 `status` 分支仅通过 `last=$(get_last_mode)` 读取 `.run_mode` 文件，未优先判定用户命令行指定的 `MODE`。若之前曾以 docker 启动过，即使执行 `MODE=local sh run.sh status`，也会被强制路由到 `status_docker` 并触发相同报错。
+- **整改措施**：
+  1. **全局参数位置纠正**：
+     - `start_docker`：调整为 `DB_IMAGE="$(choose_db_image)" $compose $args up -d --build`，确保 `$args` 位于 `up` 之前；
+     - `restart_docker`：调整为 `DB_IMAGE="$(choose_db_image)" $compose $args up -d --build --force-recreate`；
+     - `stop_docker`：调整为 `$compose $args down --remove-orphans`，全局参数前置，并抑制停止时的 profile 探测冗余信息。
+  2. **精简 `status_docker`**：
+     - 去除 `compose_extra_args` 调用，直接执行 `$compose ps`，干净、稳定地输出所有属于该项目的容器及其运行状态。
+  3. **增加 profiles 语法兼容性探测**：
+     - 新增 `compose_supports_profiles()` 函数，执行 `$compose --help` 探测当前 Docker Compose 版本是否原生支持 `--profile` 参数；若遇到老旧版本则平滑跳过 profile 附加，避免命令报错。
+  4. **`status` 子命令模式优先级重构**：
+     - 改为 `target_mode="${MODE:-$(get_last_mode)}"`，优先响应显式传递的 `MODE=local` 或 `MODE=docker`；
+     - 当两者均未指定时，通过本地 PID 文件、端口监听以及容器运行状态进行智能嗅探与展示。
+
 ### 10.8 已知限制
 
 - 脚本为 bash 实现，依赖 Linux 环境（`/proc`、`ss`/`lsof`、`nohup`）；Windows 本地（无 WSL）无法直接执行，需在服务器或 WSL 环境使用。
 - 脚本依赖 bash 语法（`read -p`、`local` 等）；已做 sh→bash 自动重执行兼容，但系统必须已安装 bash。
-- `stop` / `status` 依赖 `.run_mode` 记忆文件判断模式；若从未运行过则默认走传统方式分支。
+- `stop` / `status` 优先响应显式环境变量 `MODE`（如 `MODE=docker` 或 `MODE=local`），未指定时回退至 `.run_mode` 记忆文件；若两者均无则自动探测本地进程与容器状态。
 - `docker compose` 方式未做版本号强校验，依赖本机已安装 docker compose v2 或 v1 的 `docker-compose`。
 - Celery 任务检测基于源码 grep（`@shared_task`/`@app.task`/`.delay()`/`apply_async`），若任务写在非标准位置可能漏检；此时可用 `ENABLE_WORKER=1` 强制启用。
 - `pgvector/pgvector:pg18` 与 `postgres:15-alpine` 数据卷不兼容，切换数据库镜像需重建 `pgdata` 卷。
