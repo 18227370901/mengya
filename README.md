@@ -61,7 +61,7 @@ npm run build && npm run preview   # 预览构建产物
 
 | 账号 | 密码 | 说明 |
 | --- | --- | --- |
-| 13800000001 | admin123 | 管理员账号 |
+| admin | admin123 | 管理员账号（默认，可通过 ADMIN_USERNAME 自定义） |
 | 13800000000 | mengya123 | 演示用户（需邀请注册创建） |
 
 > 注册模式支持「开放注册」和「仅限邀请注册」两种，管理员可在注册管理页面切换并生成邀请链接。
@@ -153,9 +153,9 @@ BACKEND_PORT=9000 EXTERNAL_PORT=20448 ./run.sh start
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `ADMIN_USERNAME` | `13800000001` | 管理员账号 |
+| `ADMIN_USERNAME` | `admin` | 管理员账号（支持自定义如 admin_yy，重启后仅保留配置的唯一管理员） |
 | `ADMIN_PASSWORD` | `admin123` | 管理员密码 |
-| `ADMIN_NICKNAME` | `管理员` | 管理员昵称 |
+| `ADMIN_NICKNAME` | `管理员` | 管理员界面展示称谓（系统各页面右上角/首页问候等昵称） |
 | `BACKEND_PORT` | `8000` | 后端端口 |
 | `FRONTEND_PORT` | `5173` | 前端端口 |
 | `EXTERNAL_PORT` | `10224` | nginx 外部访问端口 |

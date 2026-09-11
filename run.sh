@@ -25,7 +25,7 @@
 #   - 传统方式下会自动校验依赖（python 包 / node_modules），缺失则自动安装
 #
 # 可自定义的配置项（通过环境变量传入，均有默认值）：
-#   ADMIN_USERNAME    管理员账号（手机号或用户名，默认 13800000001）
+#   ADMIN_USERNAME    管理员账号（手机号或用户名，默认 admin）
 #   ADMIN_PASSWORD    管理员密码（默认 admin123）
 #   ADMIN_NICKNAME    管理员昵称（默认 管理员）
 #   BACKEND_PORT      后端服务端口（默认 8000）
@@ -69,7 +69,7 @@ if [ -z "$BASH_VERSION" ]; then
 fi
 
 # ===== 配置项（可从环境变量覆盖）=====
-export ADMIN_USERNAME="${ADMIN_USERNAME:-13800000001}"
+export ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 export ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 export ADMIN_NICKNAME="${ADMIN_NICKNAME:-管理员}"
 export BACKEND_PORT="${BACKEND_PORT:-8000}"
@@ -95,6 +95,11 @@ MODE_FILE="$SCRIPT_DIR/.run_mode"
 
 port_in_use() {
     local port="$1"
+    local pids
+    pids=$(get_port_pids "$port")
+    if [ -n "$pids" ]; then
+        return 0
+    fi
     if command -v ss >/dev/null 2>&1; then
         ss -ltn 2>/dev/null | grep -qE "[:.]$port[[:space:]]" && return 0
     fi
@@ -639,26 +644,59 @@ stop_service() {
     local name="$2"
     local pidfile="$3"
     local port="$4"
+    local pattern="$5"
     local stopped=0
+    local target_pids=""
 
+    # 维度 1：PID 文件中的 PID
     if [ -n "$pid" ] && pid_alive "$pid"; then
-        echo "  ==> 停止 $name (PID $pid)"
-        kill_pid_tree "$pid"
+        target_pids="$target_pids $pid"
+    fi
+
+    # 维度 2：监听端口的 PID
+    if [ -n "$port" ]; then
+        local port_pids
+        port_pids=$(get_port_pids "$port")
+        if [ -n "$port_pids" ]; then
+            target_pids="$target_pids $port_pids"
+        fi
+    fi
+
+    # 维度 3：按命令行模式匹配的 PID
+    if [ -n "$pattern" ] && command -v pgrep >/dev/null 2>&1; then
+        local pattern_pids
+        pattern_pids=$(pgrep -f "$pattern" 2>/dev/null || true)
+        if [ -n "$pattern_pids" ]; then
+            target_pids="$target_pids $pattern_pids"
+        fi
+    fi
+
+    # 去重
+    local unique_pids
+    unique_pids=$(echo "$target_pids" | tr " " "\n" | grep -E "^[0-9]+$" | sort -u || true)
+
+    if [ -n "$unique_pids" ]; then
+        echo "  ==> 停止 $name (相关 PID: $unique_pids)"
+        for p in $unique_pids; do
+            kill_pid_tree "$p"
+        done
         stopped=1
     fi
     rm -f "$pidfile"
 
-    # 兜底：若端口仍被占用，查找该端口上的进程并强制终止
-    if [ -n "$port" ] && port_in_use "$port"; then
-        local port_pids
-        port_pids=$(get_port_pids "$port")
-        if [ -n "$port_pids" ]; then
-            echo "  ==> 检测到端口 $port 仍有残留进程 (PID $port_pids)，正在清理..."
-            for p in $port_pids; do
-                kill_pid_tree "$p"
+    # 校验并等待端口释放
+    if [ -n "$port" ]; then
+        for _ in $(seq 1 6); do
+            local remaining_pids
+            remaining_pids=$(get_port_pids "$port")
+            if [ -z "$remaining_pids" ]; then
+                break
+            fi
+            for rp in $remaining_pids; do
+                kill -9 "$rp" 2>/dev/null || true
             done
-            stopped=1
-        fi
+            sleep 0.5
+        done
     fi
 
     if [ "$stopped" = "1" ]; then
@@ -671,11 +709,10 @@ stop_service() {
 # ===== 传统方式：停止全部 =====
 stop_local_all() {
     echo "==> 停止服务（传统方式）"
-    stop_service "$(get_backend_pid)" "后端 Django" "$BACKEND_PID_FILE" "$BACKEND_PORT"
-    stop_service "$(get_frontend_pid)" "前端 Vite" "$FRONTEND_PID_FILE" "$FRONTEND_PORT"
+    stop_service "$(get_backend_pid)" "后端 Django" "$BACKEND_PID_FILE" "$BACKEND_PORT" "manage.py runserver"
+    stop_service "$(get_frontend_pid)" "前端 Vite" "$FRONTEND_PID_FILE" "$FRONTEND_PORT" "vite"
     echo "  传统服务停止操作完成"
 }
-
 # ===== 传统方式：状态查询 =====
 show_status_local() {
     echo "============================================"
@@ -757,6 +794,10 @@ case "$CMD" in
                 stop_docker 2>/dev/null || true
                 stop_local_all
             fi
+        fi
+        # 兜底清理：只要本地存在残留 PID 文件或本地端口被占用，自动执行传统服务彻底清理
+        if [ -f "$BACKEND_PID_FILE" ] || [ -f "$FRONTEND_PID_FILE" ] || port_in_use "$BACKEND_PORT" || port_in_use "$FRONTEND_PORT"; then
+            stop_local_all
         fi
         ;;
     restart)

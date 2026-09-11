@@ -75,23 +75,31 @@ def _get_client_ip(request):
 
 
 def _find_user_by_account(account):
-    """按手机号或用户名查找用户"""
+    """按手机号或用户名查找用户（支持大小写不敏感匹配）"""
     if not account:
         return None
+    acc = str(account).strip()
     return (
-        User.objects.filter(phone=account).first()
-        or User.objects.filter(username=account).first()
+        User.objects.filter(phone__iexact=acc).first()
+        or User.objects.filter(username__iexact=acc).first()
     )
 
 
 def _security_setting():
-    """获取当前安全风控阈值配置"""
-    s = SystemSetting.get_settings()
-    return {
-        "captcha_threshold": max(1, s.login_captcha_threshold or 3),
-        "freeze_threshold": max(2, s.login_freeze_threshold or 10),
-        "lock_minutes": max(0, s.login_lock_minutes or 0),
-    }
+    """获取当前安全风控阈值配置（带容错兜底）"""
+    try:
+        s = SystemSetting.get_settings()
+        return {
+            "captcha_threshold": max(1, s.login_captcha_threshold or 3),
+            "freeze_threshold": max(2, s.login_freeze_threshold or 10),
+            "lock_minutes": max(0, s.login_lock_minutes or 0),
+        }
+    except Exception:
+        return {
+            "captcha_threshold": 3,
+            "freeze_threshold": 10,
+            "lock_minutes": 5,
+        }
 
 
 def _maybe_require_captcha(user, fail_count, threshold):

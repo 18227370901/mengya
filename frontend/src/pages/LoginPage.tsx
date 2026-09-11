@@ -205,7 +205,7 @@ export default function LoginPage() {
             <form onSubmit={submit} className="space-y-4">
               <div>
                 <label className="label">手机号 / 用户名</label>
-                <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="手机号或用户名" maxLength={11} required />
+                <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入手机号或管理员账号" maxLength={50} required />
               </div>
               <div>
                 <label className="label">密码</label>
