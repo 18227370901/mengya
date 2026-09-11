@@ -63,7 +63,7 @@ services:
     environment:
       DATABASE_URL: postgresql://mengya:mengya123@db:5432/mengya
       REDIS_URL: redis://redis:6379/0
-      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+      DJANGO_ALLOWED_HOSTS: "*"
       ADMIN_USERNAME: ${ADMIN_USERNAME:-${ADMIN_PHONE:-13800000001}}
       ADMIN_PHONE: ${ADMIN_PHONE:-${ADMIN_USERNAME:-13800000001}}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}

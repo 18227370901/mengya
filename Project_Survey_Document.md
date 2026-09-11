@@ -627,15 +627,21 @@ MODE 环境变量已设置 → 直接使用（校验取值）
   - Docker 部署启动后，访问注册页报错：`无法获取注册模式，请检查网络后刷新页面重试`；点击登录报错：`Request failed with status code 500`。
 - **根本原因**：
   1. **Vite 代理硬编码 localhost**：`frontend/vite.config.ts` 中的代理目标硬编码为 `http://localhost:8000`。在 Docker 容器网络中，前端容器 `mengya_frontend` 内部的 `localhost` 仅指向前端容器自身，未监听 8000 端口（后端运行在独立的 `mengya_backend` 容器）。请求直接遭遇 `ECONNREFUSED 127.0.0.1:8000`，Vite 代理返回 HTTP 500。
-  2. **Django ALLOWED_HOSTS 限制**：原 `settings.py` 默认仅允许 `localhost,127.0.0.1,0.0.0.0`。Vite 跨容器代理发往 `backend:8000`（携带 Host 为 `backend:8000`）时，会被 Django 的 Host 校验拦截报 HTTP 400 Bad Request。
-  3. **Docker 编排缺少环境变量**：`docker-compose.yml` 未给 `frontend` 注入 `BACKEND_URL`，且 `backend` 的环境变量中账号字段命名未完全对齐。
+  2. **Django ALLOWED_HOSTS 限制与服务器旧 .env 覆盖（导致 400 Bad Request）**：
+     - Vite 代理成功连接后端后，发送请求头 `Host: backend:8000`。
+     - Django 的 `CommonMiddleware` 在接收请求时调用 `request.get_host()` 强校验 Host。
+     - 若服务器上已存在旧 `.env` 文件（内含 `DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0`），由于 `.env` 被 `.gitignore` 忽略，`git pull` 不会更新它。
+     - Docker Compose 与 Django 读取到旧环境变量后，`ALLOWED_HOSTS` 未包含 `backend` 或 `*`，Django 触发 `DisallowedHost` 异常并直接返回 **HTTP 400 Bad Request**（HTML 页面，Axios 报错 `Request failed with status code 400`）。
+  3. **Docker 编排缺少环境变量**：`docker-compose.yml` 原未给 `frontend` 注入 `BACKEND_URL`，且 `backend` 的环境变量中账号字段命名未完全对齐。
 - **整改措施**：
   1. `frontend/vite.config.ts`：通过 `loadEnv` 与 `process.env.BACKEND_URL` 动态读取后端地址，未配置时回退为 `http://localhost:8000`（确保 local 开发模式无缝运行）。
-  2. `docker-compose.yml`：
+  2. `backend/config/settings.py`：
+     - 增加兜底逻辑：在 `DEBUG=True`（开发/演示默认）或包含 `*` 时，强制 `ALLOWED_HOSTS = ["*"]`。
+     - 即使 `DEBUG=False`，也强制追加 `backend`、`localhost`、`127.0.0.1`、`0.0.0.0` 到白名单，彻底免疫服务器旧 `.env` 覆盖导致的 400 拦截。
+  3. `docker-compose.yml`：
      - `frontend` 服务添加环境变量 `BACKEND_URL=http://backend:8000`。
-     - `backend` 服务注入 `DJANGO_ALLOWED_HOSTS: "*"`，并兼容 `ADMIN_USERNAME` / `ADMIN_PHONE`。
+     - `backend` 服务强制注入 `DJANGO_ALLOWED_HOSTS: "*"`（非插值默认值，防止被旧 .env 覆盖），并兼容 `ADMIN_USERNAME` / `ADMIN_PHONE`。
      - `backend` 启动命令补充 `init_fetal_stories` 种子数据初始化。
-  3. `backend/config/settings.py`：`ALLOWED_HOSTS` 默认回退值加入 `backend,*`，`.env` 与 `.env.example` 同步更新。
   4. `ensure_admin.py`：兼容读取 `ADMIN_USERNAME` 与 `ADMIN_PHONE`。
 
 ### 10.8 已知限制
